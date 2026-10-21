@@ -646,3 +646,21 @@ misses with a plan reads as maturity. Hiding them reads as inexperience.
 2. Why is the dashboard built by CI instead of committed?
 3. Show me how a malicious log value could attack a SOC dashboard, and how yours prevents it.
 4. Which missed events worry you, and which don't? Why?
+
+### Dashboard redesign: why it looks the way it does
+
+- **Red = attacker, blue = defender.** Borrowed from the field's own red team / blue team
+  vocabulary, so the colors carry meaning, not decoration. Grey is ordinary activity.
+- **Colors were validated, not eyeballed.** A palette script checked that red and blue stay
+  distinguishable for colorblind viewers (ΔE ~20, target ≥ 8) in both light and dark mode,
+  and that text meets contrast minimums. Two failures were fixed: muted text (4.3:1 → 4.5:1+)
+  and the grey tick. Attack ticks are also *taller*, so color is never the only cue.
+- **The hero is the evidence itself.** Every one of the 1,670 real events is drawn as a tick,
+  one row per attack, with blue underlines wherever a detection fired. You can see false
+  positives in it (grey ticks with blue underlines in the access-key row) without reading
+  a number.
+- **One typeface family** (Atkinson Hyperlegible, designed for legibility), with its mono
+  sibling only for real log text and code.
+- **Tested like code:** checked at desktop and 390px phone width in both themes, with no
+  horizontal scroll in any view. One real bug fixed: CSS grid `1fr` columns refuse to shrink
+  below their content; `minmax(0, 1fr)` fixes it.
