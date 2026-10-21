@@ -94,7 +94,7 @@ def run_toy_replay(lab):
 
 def test_replay_writes_all_reports(toy_lab):
     assert run_toy_replay(toy_lab) == 0
-    for name in ("results.md", "results.json", "coverage.md", "coverage.svg"):
+    for name in ("results.md", "results.json", "alerts.md", "coverage.md", "coverage.svg"):
         assert (toy_lab / "reports" / name).is_file()
 
 
@@ -163,3 +163,10 @@ def test_real_known_benign_file_loads():
 def test_technique_tags_parsed():
     rule = {"tags": ["attack.initial_access", "attack.t1078.004", "attack.T1530", "cve.2024.1"]}
     assert coverage.techniques_in_rule(rule) == {"T1078.004", "T1530"}
+
+
+def test_alert_queue_hides_answer_key(toy_lab):
+    run_toy_replay(toy_lab)
+    queue = (toy_lab / "reports" / "alerts.md").read_text(encoding="utf-8")
+    assert "Open #1" in queue and "Auto-closed x1: test-scanner" in queue
+    assert "lab_label" not in queue and "malicious" not in queue

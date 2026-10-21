@@ -535,3 +535,35 @@ Lesson: correlation over big log volumes is where naive code hurts first.
 3. Which GuardDuty finding would you trust more than your own rule, and why?
 4. What's the risk of the known-benign entry you wrote? How would an attacker abuse it?
 5. Why keep a failed `CreatePolicyVersion` attempt as an alert?
+
+---
+
+## Phase 5 — Finishing the automation harness
+
+### What does an analyst actually get?
+
+`reports/alerts.md`, the alert queue. Each open alert lists the context `enrich.py`
+attached (user, IPs and countries in the alert, and whether each is **new for this user**)
+plus the first few events. Auto-closed alerts are grouped by the known-benign entry that
+closed them, with its written reason. The answer key is deliberately left out, and a test
+checks that, because an analyst never gets to see `lab_label`.
+
+### What does `--regenerate` prove?
+
+`python harness/replay.py --regenerate` rebuilds every sample log from the raw data before
+replaying. Running it and then `git status` showing *no changes* proves the pipeline is
+deterministic: anyone can reproduce the exact committed results.
+
+### The automation in one breath
+
+Raw public data → labeled sample logs (`generate.py`) → every rule over its log types
+(`replay.py` + `evaluate.py`) → triage: auto-close with reasons, context for the rest
+(`enrich.py`) → reports: results table, alert queue, ATT&CK map (`coverage.py`) → CI runs
+all of it on every push and posts the tables to the Actions summary.
+
+### Practice questions
+
+1. Walk me through what happens, file by file, when you push a commit.
+2. What context would you add next to `enrich.py`? (Ideas: a geo-IP / ASN reputation lookup,
+   the user's group memberships, recent password resets.)
+3. Why does the alert queue show at most five events per alert?

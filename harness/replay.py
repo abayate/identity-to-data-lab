@@ -11,7 +11,7 @@ What it does, in order:
   3. Runs each rule only against the log type it is written for (its `logsource`).
   4. Scores each rule (true / false positives) and triages its hits with enrich.py.
   5. Prints a summary table and writes reports/ (results.md, results.json,
-     coverage.md, coverage.svg).
+     alerts.md, coverage.md, coverage.svg).
   6. If running in GitHub Actions, also adds the summary to the run's summary page.
 """
 
@@ -119,6 +119,7 @@ def evaluate_all(rules, logs, known_benign):
             "fp_rate_after_triage": open_false_positives / benign_total if benign_total else 0.0,
             "caught_ids": {id(e) for alert in alerts for e in alert if e.get("lab_label") == "malicious"},
             "open_alerts": [t for t in triaged if t["status"] == "open"],
+            "closed_alerts": [t for t in triaged if t["status"] == "auto_closed"],
         })
     return results
 
@@ -149,12 +150,53 @@ def results_markdown(results, caught, total_malicious):
     return "\n".join(lines) + "\n"
 
 
+def describe_event(event):
+    """One short line for an event: when, who, what, from where (works for every log type)."""
+    who = (event.get("UserPrincipalName") or event.get("UserId")
+           or (event.get("userIdentity") or {}).get("arn") or "?")
+    what = (event.get("Operation") or event.get("eventName") or event.get("OperationName")
+            or event.get("AppDisplayName") or "sign-in")
+    where = event.get("IPAddress") or event.get("ClientIP") or event.get("sourceIPAddress") or "-"
+    return f"{event.get('TimeGenerated', '?')} | {who} | {what} | {where}"
+
+
+def alerts_markdown(results, max_events=5):
+    """The analyst's view: every open alert with its context, every auto-close with its reason.
+
+    The answer key is deliberately NOT shown: an analyst wouldn't have it.
+    """
+    lines = ["# Alert queue", "",
+             "Open alerts carry the context `harness/enrich.py` attached. Auto-closed alerts",
+             "show the `known_benign.yml` entry that closed them.", ""]
+    for r in results:
+        if not r["open_alerts"] and not r["closed_alerts"]:
+            continue
+        lines += [f"## {r['rule']}", "",
+                  f"{len(r['open_alerts'])} open, {len(r['closed_alerts'])} auto-closed.", ""]
+        for number, alert in enumerate(r["open_alerts"], start=1):
+            lines += [f"**Open #{number}** ({len(alert['events'])} event(s))", ""]
+            lines += [f"- {key}: {value}" for key, value in alert["context"].items()]
+            lines += ["", "```"]
+            lines += [describe_event(e) for e in alert["events"][:max_events]]
+            if len(alert["events"]) > max_events:
+                lines.append(f"... {len(alert['events']) - max_events} more")
+            lines += ["```", ""]
+        reasons = {}
+        for alert in r["closed_alerts"]:
+            reasons[alert["reason"]] = reasons.get(alert["reason"], 0) + 1
+        lines += [f"- Auto-closed x{count}: {reason}" for reason, count in sorted(reasons.items())]
+        if reasons:
+            lines.append("")
+    return "\n".join(lines) + "\n"
+
+
 def write_reports(out_dir, results, coverage, caught, total_malicious):
     """Write results and coverage files into out_dir. Returns the results markdown."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     table = results_markdown(results, caught, total_malicious)
     (out_dir / "results.md").write_text("# Replay results\n\n" + table, encoding="utf-8")
+    (out_dir / "alerts.md").write_text(alerts_markdown(results), encoding="utf-8")
     (out_dir / "coverage.md").write_text(
         "# ATT&CK coverage\n\n![coverage map](coverage.svg)\n\n" + coverage_markdown(coverage),
         encoding="utf-8",
@@ -163,7 +205,7 @@ def write_reports(out_dir, results, coverage, caught, total_malicious):
     # JSON for machines: drop the internal fields that can't be serialized.
     serializable = [
         {key: (sorted(value) if key == "techniques" else value)
-         for key, value in r.items() if key not in ("caught_ids", "open_alerts")}
+         for key, value in r.items() if key not in ("caught_ids", "open_alerts", "closed_alerts")}
         for r in results
     ]
     (out_dir / "results.json").write_text(
