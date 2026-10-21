@@ -1,0 +1,54 @@
+title: M365 File Read Event
+name: m365_file_read
+id: 39d0bce0-9c60-48ab-8cec-60be16cfab8e
+status: experimental
+description: Base rule. A user opened, previewed, downloaded or synced a SharePoint / OneDrive file.
+author: identity-to-data-lab
+date: 2026-10-21
+logsource:
+  product: m365
+  service: m365
+detection:
+  selection:
+    Operation:
+      - FileAccessed
+      - FilePreviewed
+      - FileDownloaded
+      - FileSyncDownloadedFull
+  condition: selection
+level: informational
+---
+title: M365 Mass File Access or Download by One User
+id: 7981d8b1-a12c-41d4-9f22-86d89bf2372e
+status: experimental
+description: >
+  Detects one account reading more than 20 SharePoint / OneDrive files within 10 minutes,
+  whether by opening them in a browser, bulk-downloading them as a zip, syncing a whole
+  library, or using a tool like rclone. An attacker holding a stolen session collects as
+  much as possible before access is cut off; a person reading documents rarely touches
+  more than a handful in ten minutes.
+references:
+  - https://learn.microsoft.com/en-us/purview/audit-log-activities#file-and-page-activities
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1567/o365_sus_file_activity
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.collection
+  - attack.exfiltration
+  - attack.t1530
+  - attack.t1567
+correlation:
+  type: event_count
+  rules:
+    - m365_file_read
+  group-by:
+    - UserId
+  timespan: 10m
+  condition:
+    gt: 20
+falsepositives:
+  - First-time OneDrive sync of a large library on a new laptop (FileSyncDownloadedFull)
+  - Migration, backup or eDiscovery service accounts
+  - Users downloading a whole project folder before travel
+  - Tune per account type; known_benign.yml entries for backup / migration accounts
+level: high

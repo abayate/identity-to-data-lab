@@ -1,0 +1,30 @@
+title: M365 File Download With Rclone User Agent
+id: 2e4c5c7a-ccea-474c-9054-afd82110f701
+status: experimental
+description: >
+  Detects SharePoint / OneDrive downloads whose user agent identifies the rclone command-line
+  sync tool. Rclone is popular with data-theft and ransomware crews because it copies whole
+  cloud libraries quickly and can push them straight to attacker-owned storage. Few business
+  users run it against corporate SharePoint.
+references:
+  - https://rclone.org/
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1567/o365_sus_file_activity
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.exfiltration
+  - attack.t1567
+  - attack.t1530
+logsource:
+  product: m365
+  service: m365
+detection:
+  selection:
+    Operation: FileDownloaded
+    UserAgent|contains: rclone
+  condition: selection
+falsepositives:
+  - IT staff or developers who use rclone for sanctioned backups or migrations
+  - The user agent is set by the client, so an attacker can change it; treat this as a
+    cheap high-confidence signal, not a complete control
+level: high

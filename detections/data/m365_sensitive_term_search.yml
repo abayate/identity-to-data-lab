@@ -1,0 +1,43 @@
+title: M365 Search for Credential or Payroll Terms
+id: 85cf731b-5a62-4f10-b487-e9e2a2733545
+status: experimental
+description: >
+  Detects SharePoint or Microsoft Search queries for words attackers look for after getting
+  into a mailbox or file store: passwords, credentials, VPN access, payroll and direct
+  deposit details. Searching is how an intruder finds the valuable files before downloading
+  them, so this often fires before the mass-download rule.
+references:
+  - https://learn.microsoft.com/en-us/purview/audit-log-activities
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1213.002/o365_sus_sharepoint_search
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.collection
+  - attack.discovery
+  - attack.t1213.002
+logsource:
+  product: m365
+  service: m365
+detection:
+  selection_operation:
+    Operation:
+      - SearchQueryPerformed
+      - SearchQueryInitiatedSharePoint
+      - SearchQueryInitiatedExchange
+  selection_term_sharepoint:
+    SearchQueryText|contains: &sensitive_terms
+      - password
+      - passwd
+      - credential
+      - secret
+      - vpn
+      - payroll
+      - direct deposit
+  selection_term_search:
+    QueryText|contains: *sensitive_terms
+  condition: selection_operation and 1 of selection_term_*
+falsepositives:
+  - HR and payroll staff searching for payroll documents as part of their job
+  - Help-desk staff searching for password-reset procedures
+  - Tune by excluding the departments whose job these searches are (by group membership)
+level: medium

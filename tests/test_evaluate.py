@@ -223,3 +223,48 @@ def test_parse_timespan_rejects_garbage():
     from harness.evaluate import parse_timespan
     with pytest.raises(ValueError):
         parse_timespan("an hour")
+
+
+# --- Rules spread across files, and temporal correlations ---
+
+def test_load_rules_resolves_references_across_files(tmp_path):
+    from harness.evaluate import load_rules
+    (tmp_path / "a.yml").write_text(CORRELATION_YAML.replace(
+        "title: Toy correlation", "name: toy_multi_ip\ntitle: Toy correlation"), encoding="utf-8")
+    (tmp_path / "b.yml").write_text("""
+title: Toy mail read
+name: toy_mail_read
+logsource: {product: m365, service: m365}
+detection:
+  selection: {Operation: MailItemsAccessed}
+  condition: selection
+---
+title: Toy temporal
+correlation:
+  type: temporal
+  rules: [toy_multi_ip, toy_mail_read]
+  group-by: [user]
+  aliases:
+    user: {toy_multi_ip: UserPrincipalName, toy_mail_read: UserId}
+  timespan: 1h
+""", encoding="utf-8")
+    titles = sorted(rule["title"] for rule in load_rules(tmp_path))
+    # Base rules that only feed correlations are not reported on their own.
+    assert titles == ["Toy correlation - user from more than one IP within 1 hour", "Toy temporal"]
+
+
+def test_unknown_reference_is_an_error(tmp_path):
+    from harness.evaluate import load_rules
+    (tmp_path / "x.yml").write_text("""
+title: Broken
+correlation: {type: temporal, rules: [does_not_exist], group-by: [u], timespan: 1h}
+""", encoding="utf-8")
+    with pytest.raises(ValueError):
+        load_rules(tmp_path)
+
+
+def test_records_missing_the_group_field_are_ignored(correlation_rule):
+    from harness.evaluate import find_alerts
+    records = [signin(None, "1.1.1.1", "2026-01-01T10:00:00Z"),
+               signin(None, "2.2.2.2", "2026-01-01T10:01:00Z")]
+    assert find_alerts(correlation_rule, records) == []

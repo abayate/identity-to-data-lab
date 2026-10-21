@@ -1,0 +1,57 @@
+title: M365 User Data Access Event
+name: m365_user_data_access
+id: a462b6a9-2176-4519-b876-86361d531b50
+status: experimental
+description: Base rule. A user read files or mailbox items.
+author: identity-to-data-lab
+date: 2026-10-21
+logsource:
+  product: m365
+  service: m365
+detection:
+  selection:
+    Operation:
+      - FileAccessed
+      - FileDownloaded
+      - FileSyncDownloadedFull
+      - MailItemsAccessed
+  condition: selection
+level: informational
+---
+title: Data Access Within One Hour of a Multi-IP Entra Session
+id: 4c201c82-e835-406b-b0a1-d9efe5cf975c
+status: experimental
+description: >
+  The identity-to-data link. Fires when a user is flagged by the multi-IP session rule
+  (likely AiTM session-cookie replay) AND that same user reads files or mailbox items
+  within the same hour. Either signal alone is ambiguous: roaming users trip the first,
+  and everyone reads files. Together they mean "a possibly stolen session is being used
+  to collect data", which is the step that turns an identity incident into a data breach.
+  It correlates two log sources, Entra sign-ins and M365 audit, using a field alias,
+  because the user is UserPrincipalName in one and UserId in the other.
+references:
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1185/o365_concurrent_sessions_from_different_ips
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.collection
+  - attack.t1530
+  - attack.t1114.002
+  - attack.t1078.004
+correlation:
+  type: temporal
+  rules:
+    - entra_user_session_multiple_ips
+    - m365_user_data_access
+  group-by:
+    - user
+  aliases:
+    user:
+      entra_user_session_multiple_ips: UserPrincipalName
+      m365_user_data_access: UserId
+  timespan: 1h
+falsepositives:
+  - Inherits the multi-IP rule's roaming false positives, but only when the roaming user
+    also reads data in that hour, so it is far less noisy than the multi-IP rule alone
+  - Tune the multi-IP rule (VPN / egress ranges) and this rule improves with it
+level: high

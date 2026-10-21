@@ -24,6 +24,7 @@ PLANNED_TECHNIQUES = [
     ("T1078.004", "Valid Accounts: Cloud Accounts", "Identity"),
     ("T1213.002", "Data from Info Repositories: SharePoint", "Data"),
     ("T1530", "Data from Cloud Storage", "Data"),
+    ("T1114.002", "Email Collection: Remote Email Collection", "Data"),
     ("T1567", "Exfiltration Over Web Service", "Data"),
     ("T1552.001", "Unsecured Credentials: Credentials In Files", "AWS"),
     ("T1098.003", "Account Manipulation: Additional Cloud Roles", "AWS"),

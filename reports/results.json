@@ -1,6 +1,66 @@
 {
   "rules": [
     {
+      "rule": "Data Access Within One Hour of a Multi-IP Entra Session",
+      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\data\\identity_to_data_access_after_multi_ip_session.yml",
+      "techniques": [
+        "T1078.004",
+        "T1114.002",
+        "T1530"
+      ],
+      "events_checked": 332,
+      "hits": 1,
+      "true_positives": 1,
+      "false_positives": 0,
+      "auto_closed": 0,
+      "fp_rate": 0.0,
+      "fp_rate_after_triage": 0.0
+    },
+    {
+      "rule": "M365 Mass File Access or Download by One User",
+      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\data\\m365_mass_file_access.yml",
+      "techniques": [
+        "T1530",
+        "T1567"
+      ],
+      "events_checked": 289,
+      "hits": 4,
+      "true_positives": 4,
+      "false_positives": 0,
+      "auto_closed": 0,
+      "fp_rate": 0.0,
+      "fp_rate_after_triage": 0.0
+    },
+    {
+      "rule": "M365 File Download With Rclone User Agent",
+      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\data\\m365_rclone_download.yml",
+      "techniques": [
+        "T1530",
+        "T1567"
+      ],
+      "events_checked": 289,
+      "hits": 58,
+      "true_positives": 58,
+      "false_positives": 0,
+      "auto_closed": 0,
+      "fp_rate": 0.0,
+      "fp_rate_after_triage": 0.0
+    },
+    {
+      "rule": "M365 Search for Credential or Payroll Terms",
+      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\data\\m365_sensitive_term_search.yml",
+      "techniques": [
+        "T1213.002"
+      ],
+      "events_checked": 289,
+      "hits": 12,
+      "true_positives": 12,
+      "false_positives": 0,
+      "auto_closed": 0,
+      "fp_rate": 0.0,
+      "fp_rate_after_triage": 0.0
+    },
+    {
       "rule": "Entra ID Sign-In Using Device Code Flow",
       "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\entra\\entra_device_code_signin.yml",
       "techniques": [
@@ -44,7 +104,7 @@
       "fp_rate_after_triage": 0.0
     }
   ],
-  "chain_caught": 28,
+  "chain_caught": 274,
   "chain_total": 316,
   "coverage": [
     {
@@ -86,6 +146,7 @@
       "branch": "Identity",
       "status": "tested",
       "rules": [
+        "Data Access Within One Hour of a Multi-IP Entra Session",
         "Entra ID User Session Active From Multiple IPs Within One Hour"
       ]
     },
@@ -93,22 +154,40 @@
       "id": "T1213.002",
       "name": "Data from Info Repositories: SharePoint",
       "branch": "Data",
-      "status": "gap",
-      "rules": []
+      "status": "tested",
+      "rules": [
+        "M365 Search for Credential or Payroll Terms"
+      ]
     },
     {
       "id": "T1530",
       "name": "Data from Cloud Storage",
       "branch": "Data",
-      "status": "gap",
-      "rules": []
+      "status": "tested",
+      "rules": [
+        "Data Access Within One Hour of a Multi-IP Entra Session",
+        "M365 Mass File Access or Download by One User",
+        "M365 File Download With Rclone User Agent"
+      ]
+    },
+    {
+      "id": "T1114.002",
+      "name": "Email Collection: Remote Email Collection",
+      "branch": "Data",
+      "status": "tested",
+      "rules": [
+        "Data Access Within One Hour of a Multi-IP Entra Session"
+      ]
     },
     {
       "id": "T1567",
       "name": "Exfiltration Over Web Service",
       "branch": "Data",
-      "status": "gap",
-      "rules": []
+      "status": "tested",
+      "rules": [
+        "M365 Mass File Access or Download by One User",
+        "M365 File Download With Rclone User Agent"
+      ]
     },
     {
       "id": "T1552.001",

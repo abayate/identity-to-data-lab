@@ -424,3 +424,60 @@ Writing limitations down as tests keeps them from being forgotten.
 3. How would the multi-IP rule change if you had `SessionId`?
 4. Device-code phishing gets past MFA. Why? What control actually stops it?
 5. A consent-grant victim resets their password. Is the attacker locked out? Why or why not?
+
+---
+
+## Phase 3 — Data-layer detections and the identity → data link
+
+### The 30-second version
+
+> "Identity rules tell you a session might be stolen. Data rules tell you what it took.
+> I added four M365 rules: mass file access, rclone downloads, searches for credential
+> and payroll terms, and a cross-source temporal correlation that fires only when a
+> user flagged for a multi-IP session also reads data within the hour. Together, all
+> the rules catch 274 of 316 malicious events, and every rule stays quiet on the
+> benign events we have."
+
+### What makes the identity → data rule different?
+
+Three things, each a Sigma v2 feature I had to add to the matcher:
+1. **Temporal correlation:** "rule A and rule B both fired for the same user within
+   an hour", in either order.
+2. **Chaining:** rule A is itself a correlation (the multi-IP rule), so it's a
+   correlation of a correlation.
+3. **Aliases across log sources:** the user is `UserPrincipalName` in sign-ins and `UserId`
+   in M365 audit. `aliases` maps both to one `user` key (compared lowercase).
+
+### Why require both halves?
+
+Precision. The multi-IP rule alone is noisy (roaming users), and data access alone is
+just people doing their jobs. The intersection is rare and serious. The tests prove it
+won't fire with only one half, or when the two are more than an hour apart.
+
+### Why count events with a threshold instead of a per-user baseline?
+
+Simplicity and explainability: "more than 20 files in 10 minutes" is easy to defend and
+to test. The trade-off: a power user can exceed it legitimately (new-laptop sync, which
+a test documents). Production would compare each user to their own history.
+
+### Why keep a rule (rclone) that an attacker can trivially evade?
+
+Defense in depth. It's cheap, it's high-confidence when it fires, and many real crews
+don't bother changing the user agent. The volume rule catches the attacker who does.
+Saying "here's how I'd evade my own rule, and here's what still catches it" is a strong
+interview answer.
+
+### A bug I caught in my own test (good story)
+
+My first "access too late" test put the mailbox read 54 minutes after the first
+sign-in and expected no alert. The rule fired, and it was right: 54 minutes is inside
+a one-hour window. The test was wrong, not the rule. When a test fails, check which
+side is wrong before changing code.
+
+### Practice questions
+
+1. Walk me through how the temporal rule decides two events belong to the same user.
+2. Why did the SharePoint exfil dataset never trigger the identity → data rule?
+3. Your mass-download rule produced 4 alerts but rclone produced 58. Why, and does it matter?
+4. How would an attacker beat each data rule? What would still catch them?
+5. Why is `MailItemsAccessed` in the data-access base rule? What licensing does it need in real M365?

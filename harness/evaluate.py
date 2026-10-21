@@ -12,11 +12,17 @@ Supported Sigma features:
   - Field modifiers: |contains, |startswith, |endswith, |re, |gt, |gte, |lt, |lte,
     and |all (every listed value must match instead of any).
   - Conditions using: and, or, not, parentheses, "1 of name*", "all of name*".
-  - Correlation rules (Sigma v2): a file with two YAML documents, a base rule
-    and a `correlation:` rule that refers to it by `name`. Supported types:
+  - Correlation rules (Sigma v2). A correlation is a YAML document with a
+    `correlation:` block that refers to other rules by their `name`, usually
+    kept in the same file as extra YAML documents. Supported types:
       event_count  - more than N matching events per group within a timespan
       value_count  - more than N distinct values of a field per group within a timespan
-    Only one base rule per correlation is supported.
+      temporal     - every referenced rule fired for the same group within a timespan
+    event_count / value_count take exactly one plain base rule. temporal can refer
+    to several rules, including other correlations and rules in other files, and
+    to rules over different log types. `aliases` map one group-by name to a
+    different field per rule (e.g. user = UserPrincipalName in sign-ins but
+    UserId in M365 audit).
 
 String comparisons ignore case, as the Sigma spec says they should.
 
@@ -36,37 +42,83 @@ import yaml
 # Loading rules
 # ---------------------------------------------------------------------------
 
-def load_rule(path):
-    """Read one Sigma rule file and return it as a dict.
-
-    For a correlation file (base rule + correlation rule as two YAML documents),
-    the returned dict is the correlation rule with the base rule's `logsource`
-    and `detection` copied in, so the rest of the code can treat it like any rule.
-    """
+def read_documents(path):
+    """Read every YAML document in a rule file, tagging each with the file it came from."""
     with open(path, encoding="utf-8") as handle:
         documents = [doc for doc in yaml.safe_load_all(handle) if doc]
-    if len(documents) == 1:
-        rule = documents[0]
-    else:
-        correlations = [doc for doc in documents if "correlation" in doc]
-        if len(correlations) != 1:
-            raise ValueError(f"{path}: a multi-document rule needs exactly one correlation rule")
-        rule = correlations[0]
-        base_names = rule["correlation"]["rules"]
-        if len(base_names) != 1:
-            raise ValueError(f"{path}: only one base rule per correlation is supported")
-        bases = [doc for doc in documents if doc.get("name") == base_names[0]]
-        if not bases:
-            raise ValueError(f"{path}: correlation refers to unknown rule {base_names[0]!r}")
+    for doc in documents:
+        doc["_path"] = str(path)
+    return documents
+
+
+def build_registry(documents):
+    """Map rule `name` -> document, so correlations can find the rules they refer to."""
+    registry = {}
+    for doc in documents:
+        if "name" in doc:
+            if doc["name"] in registry:
+                raise ValueError(f"two rules are both named {doc['name']!r}")
+            registry[doc["name"]] = doc
+    return registry
+
+
+def resolve(rule, registry, stack=()):
+    """Attach the rules a correlation refers to as rule['_bases'] (recursively).
+
+    For a simple correlation over one plain base rule, the base's `logsource` and
+    `detection` are also copied onto the correlation, so it can be matched like any rule.
+    """
+    if "correlation" not in rule:
+        return rule
+    if rule.get("name") in stack:
+        raise ValueError(f"correlation loop through {rule['name']!r}")
+    bases = []
+    for name in rule["correlation"]["rules"]:
+        if name not in registry:
+            raise ValueError(f"{rule['_path']}: correlation refers to unknown rule {name!r}")
+        bases.append(resolve(registry[name], registry, stack + (rule.get("name"),)))
+    rule["_bases"] = bases
+    if rule["correlation"]["type"] in ("event_count", "value_count"):
+        if len(bases) != 1 or "correlation" in bases[0]:
+            raise ValueError(f"{rule['_path']}: {rule['correlation']['type']} needs exactly one plain base rule")
         rule["logsource"] = bases[0]["logsource"]
         rule["detection"] = bases[0]["detection"]
-    rule["_path"] = str(path)
     return rule
 
 
+def top_level_rules(documents):
+    """The documents that raise alerts of their own.
+
+    A plain rule that exists only to feed a correlation (a "base rule") is not
+    reported separately: on its own it is too broad (e.g. "any successful sign-in").
+    Correlations are always top level, even when another correlation uses them.
+    """
+    referenced = {name for doc in documents if "correlation" in doc
+                  for name in doc["correlation"]["rules"]}
+    return [doc for doc in documents
+            if "correlation" in doc or doc.get("name") not in referenced]
+
+
+def load_rule(path, registry=None):
+    """Read the one top-level rule in a file and return it as a dict.
+
+    `registry` lets the file refer to rules defined in other files (load_rules
+    passes the registry of the whole detections directory).
+    """
+    documents = read_documents(path)
+    full_registry = dict(registry or {})
+    full_registry.update(build_registry(documents))
+    rules = top_level_rules(documents)
+    if len(rules) != 1:
+        raise ValueError(f"{path}: expected exactly one top-level rule, found {len(rules)}")
+    return resolve(rules[0], full_registry)
+
+
 def load_rules(directory):
-    """Load every .yml rule under a directory (searching sub-folders too), sorted by path."""
-    return [load_rule(path) for path in sorted(Path(directory).rglob("*.yml"))]
+    """Load every top-level rule from every .yml file under a directory, sorted by path."""
+    documents = [doc for path in sorted(Path(directory).rglob("*.yml")) for doc in read_documents(path)]
+    registry = build_registry(documents)
+    return [resolve(rule, registry) for rule in top_level_rules(documents)]
 
 
 # ---------------------------------------------------------------------------
@@ -282,41 +334,85 @@ def window_meets_condition(events, correlation):
     return all(value_matches(amount, threshold, operator) for operator, threshold in comparisons.items())
 
 
-def correlation_alerts(rule, matching):
-    """Group matching events and return one alert (a list of events) per qualifying group.
+def group_key(record, rule_name, correlation):
+    """The group a record belongs to, e.g. ('alice@contoso.example',). None if a field is missing.
 
-    For each group (e.g. each user), every event is tried as the start of a window
-    of length `timespan`. If any window meets the condition, the group raises one
-    alert containing every event from every qualifying window.
+    `aliases` let one group-by name point at a different field for each rule:
+        aliases: {user: {signin_rule: UserPrincipalName, m365_rule: UserId}}
     """
-    correlation = rule["correlation"]
-    group_fields = correlation.get("group-by", [])
-    timespan = parse_timespan(correlation["timespan"])
+    aliases = correlation.get("aliases", {})
+    key = []
+    for name in correlation.get("group-by", []):
+        field = aliases.get(name, {}).get(rule_name, name)
+        value = get_field(record, field)
+        if value is None:
+            return None
+        key.append(str(value).lower())
+    return tuple(key)
 
+
+def flag_windows(tagged_events, timespan, window_qualifies):
+    """Slide a window over (tag, event) pairs and collect every event in any qualifying window.
+
+    Every event is tried as the start of a window lasting `timespan` seconds.
+    `window_qualifies(window)` decides if that window meets the rule's condition.
+    """
+    tagged_events = sorted(tagged_events, key=lambda pair: event_time(pair[1]))
+    flagged = []
+    for start_index, (_, start) in enumerate(tagged_events):
+        window = [(tag, event) for tag, event in tagged_events[start_index:]
+                  if event_time(event) - event_time(start) <= timespan]
+        if window_qualifies(window):
+            flagged.extend(event for _, event in window if not any(event is f for f in flagged))
+    return sorted(flagged, key=event_time)
+
+
+def correlation_alerts(rule, matching):
+    """event_count / value_count: one alert per group whose events meet the condition in some window."""
+    correlation = rule["correlation"]
+    base_name = correlation["rules"][0]
     groups = {}
     for record in matching:
-        key = tuple(str(get_field(record, field)).lower() for field in group_fields)
-        groups.setdefault(key, []).append(record)
-
+        key = group_key(record, base_name, correlation)
+        if key is not None:
+            groups.setdefault(key, []).append((base_name, record))
     alerts = []
     for key in sorted(groups):
-        events = sorted(groups[key], key=event_time)
-        flagged = []
-        for start_index, start in enumerate(events):
-            window = [e for e in events[start_index:] if event_time(e) - event_time(start) <= timespan]
-            if window_meets_condition(window, correlation):
-                flagged.extend(e for e in window if not any(e is f for f in flagged))
+        flagged = flag_windows(groups[key], parse_timespan(correlation["timespan"]),
+                               lambda window: window_meets_condition([e for _, e in window], correlation))
         if flagged:
-            alerts.append(sorted(flagged, key=event_time))
+            alerts.append(flagged)
+    return alerts
+
+
+def temporal_alerts(rule, records):
+    """temporal: one alert per group in which EVERY referenced rule fired within the timespan."""
+    correlation = rule["correlation"]
+    needed = set(correlation["rules"])
+    groups = {}
+    for base in rule["_bases"]:
+        for alert in find_alerts(base, records):
+            for event in alert:
+                key = group_key(event, base["name"], correlation)
+                if key is not None:
+                    groups.setdefault(key, []).append((base["name"], event))
+    alerts = []
+    for key in sorted(groups):
+        flagged = flag_windows(groups[key], parse_timespan(correlation["timespan"]),
+                               lambda window: {tag for tag, _ in window} == needed)
+        if flagged:
+            alerts.append(flagged)
     return alerts
 
 
 def find_alerts(rule, records):
     """Return the alerts the rule raises: a list of alerts, each a list of events."""
+    if "correlation" not in rule:
+        return [[record] for record in records if rule_matches(rule, record)]
+    if rule["correlation"]["type"] == "temporal":
+        return temporal_alerts(rule, records)
     matching = [record for record in records if rule_matches(rule, record)]
-    if "correlation" in rule:
-        return correlation_alerts(rule, matching)
-    return [[record] for record in matching]
+    return correlation_alerts(rule, matching)
 
 
 def find_hits(rule, records):

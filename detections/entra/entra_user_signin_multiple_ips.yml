@@ -17,6 +17,7 @@ detection:
 level: informational
 ---
 title: Entra ID User Session Active From Multiple IPs Within One Hour
+name: entra_user_session_multiple_ips
 id: 23cb27e8-e909-4bd8-9cc6-be3a40d5a612
 status: experimental
 description: >

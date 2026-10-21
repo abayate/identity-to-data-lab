@@ -65,11 +65,21 @@ def load_logs_by_prefix(log_dir):
     return logs
 
 
+def rule_services(rule):
+    """The logsource services a rule reads. A temporal correlation reads all of its bases' services."""
+    if "logsource" in rule:
+        return {str(rule["logsource"].get("service", "")).lower()}
+    return set().union(*(rule_services(base) for base in rule.get("_bases", [])))
+
+
 def records_for_rule(rule, logs):
-    """Return the log records a rule should be run against, based on its logsource."""
-    service = str(rule.get("logsource", {}).get("service", "")).lower()
-    prefix = SERVICE_TO_FILE_PREFIX.get(service)
-    return logs.get(prefix, []) if prefix else []
+    """Return the log records a rule should be run against, based on its logsource(s)."""
+    records = []
+    for service in sorted(rule_services(rule)):
+        prefix = SERVICE_TO_FILE_PREFIX.get(service)
+        if prefix:
+            records.extend(logs.get(prefix, []))
+    return records
 
 
 def regenerate_simulations():
