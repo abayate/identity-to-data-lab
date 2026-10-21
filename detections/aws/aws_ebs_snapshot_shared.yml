@@ -1,0 +1,33 @@
+title: AWS EBS Snapshot Shared With Another Account or Made Public
+id: 2efbc0bd-af8f-42f8-a5ad-35c409431aa4
+status: experimental
+description: >
+  Detects ModifySnapshotAttribute adding create-volume permission for another AWS account
+  or for everyone (group "all"). Sharing a disk snapshot hands its entire contents to the
+  receiving account without a single byte crossing a network the victim monitors, which
+  makes it a quiet way to exfiltrate a whole server.
+references:
+  - https://stratus-red-team.cloud/attack-techniques/AWS/aws.exfiltration.ec2-share-ebs-snapshot/
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1537/aws_snapshot_exfil
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.exfiltration
+  - attack.t1537
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: ec2.amazonaws.com
+    eventName: ModifySnapshotAttribute
+  selection_share_account:
+    requestParameters.createVolumePermission.add.items.userId|re: '^\d+$'
+  selection_share_public:
+    requestParameters.createVolumePermission.add.items.group: all
+  condition: selection and 1 of selection_share_*
+falsepositives:
+  - Backup or DR tooling that copies snapshots to a dedicated backup account; allow-list
+    that account
+  - AMI publishing pipelines (public sharing should still be reviewed)
+level: high

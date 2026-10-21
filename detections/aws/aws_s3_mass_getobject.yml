@@ -1,0 +1,47 @@
+title: AWS S3 GetObject Call
+name: aws_s3_getobject
+id: 06b6ea4d-8d23-4b01-9b2b-e74c3186a2fd
+status: experimental
+description: Base rule. An object was read from S3 (requires S3 data events in CloudTrail).
+author: identity-to-data-lab
+date: 2026-10-21
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: s3.amazonaws.com
+    eventName: GetObject
+  condition: selection
+level: informational
+---
+title: AWS S3 Mass Object Download by One Identity
+id: 59f83bde-1184-4e4c-a606-b49b878be20c
+status: experimental
+description: >
+  Detects one identity reading more than 50 S3 objects within 10 minutes. The AWS
+  equivalent of the M365 mass-download rule: a stolen key holder copies a bucket before
+  the key is revoked. Only works if CloudTrail S3 data events are enabled for the bucket,
+  which is off by default and costs extra; without it, S3 reads are invisible.
+references:
+  - https://docs.aws.amazon.com/AmazonS3/latest/userguide/cloudtrail-logging-s3-info.html
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1530/aws_exfil_high_no_getobject
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.collection
+  - attack.t1530
+correlation:
+  type: event_count
+  rules:
+    - aws_s3_getobject
+  group-by:
+    - userIdentity.arn
+  timespan: 10m
+  condition:
+    gt: 50
+falsepositives:
+  - Applications, ETL jobs and analytics roles that read many objects by design; scope the
+    rule to human IAM users and sensitive buckets, or baseline per role
+  - aws s3 sync by engineers
+level: high

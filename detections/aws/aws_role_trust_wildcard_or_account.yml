@@ -1,0 +1,33 @@
+title: AWS IAM Role Created Trusting Any Principal or a Whole Account
+id: 9eb4aef8-f449-4879-a1d0-81c67e221a33
+status: experimental
+description: >
+  Detects CreateRole where the trust policy lets "*" (anyone) or an entire AWS account
+  (arn:aws:iam::<account>:root) assume the role. An attacker who can create roles plants
+  one that their own account can assume: a backdoor that survives every key rotation in
+  the victim account. A wildcard principal is almost never legitimate.
+references:
+  - https://stratus-red-team.cloud/attack-techniques/AWS/aws.persistence.iam-create-backdoor-role/
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1098.003/aws_iam_role_created_with_external_trust
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.persistence
+  - attack.t1098.003
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: iam.amazonaws.com
+    eventName: CreateRole
+  selection_trust_wildcard:
+    requestParameters.assumeRolePolicyDocument|re: '"AWS"\s*:\s*"\*"'
+  selection_trust_account:
+    requestParameters.assumeRolePolicyDocument|re: '"AWS"\s*:\s*"arn:aws:iam::\d{12}:root"'
+  condition: selection and 1 of selection_trust_*
+falsepositives:
+  - Legitimate cross-account roles (central security, CI/CD, partner access); these trust
+    a whole account by design. Sigma can't compare the account in the policy with
+    recipientAccountId, so keep an allow-list of known partner accounts in known_benign.yml
+level: medium

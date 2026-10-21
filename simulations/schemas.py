@@ -95,11 +95,33 @@ M365_OPTIONAL = {
     "AppAccessContext": dict,      # carries AADSessionId, which links file activity to a sign-in session
 }
 
+# CloudTrail keeps AWS's own camelCase field names (Sigma's aws/cloudtrail rules use them,
+# and so do Athena and CloudTrail Lake). Sentinel's AWSCloudTrail table renames them; see
+# docs/03-detections.md for the mapping used in the KQL.
+CLOUDTRAIL_REQUIRED = {
+    "TimeGenerated": str,
+    "eventTime": str,
+    "eventName": str,              # the API call, e.g. CreateAccessKey
+    "eventSource": str,            # the service, e.g. iam.amazonaws.com
+    "userIdentity": dict,          # who made the call (type, arn, userName, accessKeyId...)
+    **LAB_FIELDS,
+}
+
+CLOUDTRAIL_OPTIONAL = {
+    "sourceIPAddress": str,
+    "userAgent": str,
+    "errorCode": str,              # e.g. AccessDenied; missing when the call succeeded
+    "requestParameters": dict,
+    "recipientAccountId": str,
+    "awsRegion": str,
+}
+
 # Which schema applies to which sample-log file prefix.
 SCHEMAS = {
     "entra_signins": (SIGNIN_REQUIRED, SIGNIN_OPTIONAL),
     "entra_audit": (AUDIT_REQUIRED, AUDIT_OPTIONAL),
     "m365_audit": (M365_REQUIRED, M365_OPTIONAL),
+    "cloudtrail": (CLOUDTRAIL_REQUIRED, CLOUDTRAIL_OPTIONAL),
 }
 
 ALLOWED_LABELS = {"benign", "malicious"}

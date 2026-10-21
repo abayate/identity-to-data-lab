@@ -15,8 +15,11 @@ For every dataset in sources.yml it:
        - Azure Monitor audit exports become AuditLogs columns.
        - Office 365 Management API events are kept as-is (OfficeActivity uses
          nearly the same names) plus a TimeGenerated field.
-  4. Writes entra_signins_<name>.jsonl, entra_audit_<name>.jsonl and/or
-     m365_audit_<name>.jsonl, sorted by time, plus a README summarizing the counts.
+       - AWS CloudTrail events are kept as-is (Sigma's CloudTrail rules use AWS's
+         own field names) plus a TimeGenerated field.
+  4. Writes entra_signins_<name>.jsonl, entra_audit_<name>.jsonl,
+     m365_audit_<name>.jsonl and/or cloudtrail_<name>.jsonl, sorted by time,
+     plus a README summarizing the counts.
 
 The output is deterministic: same raw input, byte-identical output.
 """
@@ -91,7 +94,9 @@ def label_event(event, dataset):
 # ---------------------------------------------------------------------------
 
 def event_kind(event):
-    """Work out which log type a raw event is: 'signin', 'audit', or 'm365'."""
+    """Work out which log type a raw event is: 'signin', 'audit', 'm365' or 'cloudtrail'."""
+    if "eventSource" in event and "eventTime" in event:
+        return "cloudtrail"                             # AWS CloudTrail
     if "Operation" in event and "CreationTime" in event:
         return "m365"                                   # Office 365 Management API
     if event.get("category") == "AuditLogs":
@@ -164,8 +169,17 @@ def convert_m365(event):
     return converted
 
 
-CONVERTERS = {"signin": convert_signin, "audit": convert_audit, "m365": convert_m365}
-FILE_PREFIX = {"signin": "entra_signins", "audit": "entra_audit", "m365": "m365_audit"}
+def convert_cloudtrail(event):
+    """CloudTrail events keep AWS's field names; add TimeGenerated."""
+    converted = dict(event)
+    converted["TimeGenerated"] = to_utc_iso(event["eventTime"])
+    return converted
+
+
+CONVERTERS = {"signin": convert_signin, "audit": convert_audit, "m365": convert_m365,
+              "cloudtrail": convert_cloudtrail}
+FILE_PREFIX = {"signin": "entra_signins", "audit": "entra_audit", "m365": "m365_audit",
+               "cloudtrail": "cloudtrail"}
 
 
 # ---------------------------------------------------------------------------

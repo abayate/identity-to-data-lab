@@ -268,3 +268,31 @@ def test_records_missing_the_group_field_are_ignored(correlation_rule):
     records = [signin(None, "1.1.1.1", "2026-01-01T10:00:00Z"),
                signin(None, "2.2.2.2", "2026-01-01T10:01:00Z")]
     assert find_alerts(correlation_rule, records) == []
+
+
+# --- Lists inside events, and |fieldref ---
+
+CLOUDTRAIL_LIKE = {
+    "userIdentity": {"userName": "alice"},
+    "requestParameters": {
+        "userName": "Alice",
+        "createVolumePermission": {"add": {"items": [{"userId": "111122223333"}, {"group": "all"}]}},
+    },
+}
+
+
+def test_dotted_path_through_a_list():
+    from harness.evaluate import get_field
+    assert get_field(CLOUDTRAIL_LIKE, "requestParameters.createVolumePermission.add.items.userId") == ["111122223333"]
+    assert field_matches(CLOUDTRAIL_LIKE, "requestParameters.createVolumePermission.add.items.group", "all")
+    assert field_matches(CLOUDTRAIL_LIKE, "requestParameters.createVolumePermission.add.items.userId|re", r"^\d{12}$")
+    assert field_matches(CLOUDTRAIL_LIKE, "requestParameters.createVolumePermission.remove.items.userId", None)
+
+
+def test_fieldref_compares_two_fields_case_insensitively():
+    assert field_matches(CLOUDTRAIL_LIKE, "requestParameters.userName|fieldref", "userIdentity.userName")
+    other = {"userIdentity": {"userName": "alice"}, "requestParameters": {"userName": "bob"}}
+    assert not field_matches(other, "requestParameters.userName|fieldref", "userIdentity.userName")
+    # If the other field is missing, it is not a match (unknown is not "equal").
+    missing = {"userIdentity": {}, "requestParameters": {"userName": "bob"}}
+    assert not field_matches(missing, "requestParameters.userName|fieldref", "userIdentity.userName")

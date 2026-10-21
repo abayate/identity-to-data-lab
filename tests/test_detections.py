@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 import yaml
 
+from harness.enrich import load_known_benign, triage
 from harness.evaluate import alert_is_true_positive, find_alerts, load_rule, load_rules
 from harness.replay import SERVICE_TO_FILE_PREFIX, load_logs_by_prefix, records_for_rule, rule_services
 from simulations.public_datasets.fetch import load_sources
@@ -29,6 +30,12 @@ DETECTIONS_DOC = (REPO_ROOT / "docs" / "03-detections.md").read_text(encoding="u
 
 # Which scenario(s) each rule is expected to catch (the answer key, kept out of the rules).
 EXPECTED_SCENARIOS = {
+    "aws/aws_access_denied_burst.yml": {"aws_discovery"},
+    "aws/aws_access_key_created_for_other_user.yml": {"aws_privilege_escalation"},
+    "aws/aws_ebs_snapshot_shared.yml": {"aws_snapshot_exfiltration"},
+    "aws/aws_policy_version_grants_wildcard.yml": {"aws_privilege_escalation"},
+    "aws/aws_role_trust_wildcard_or_account.yml": {"aws_persistence_role_trust"},
+    "aws/aws_s3_mass_getobject.yml": {"aws_s3_exfiltration"},
     "data/identity_to_data_access_after_multi_ip_session.yml": {"aitm_cookie_replay"},
     "data/m365_mass_file_access.yml": {"sharepoint_exfiltration"},
     "data/m365_rclone_download.yml": {"sharepoint_exfiltration"},
@@ -36,6 +43,16 @@ EXPECTED_SCENARIOS = {
     "entra/entra_device_code_signin.yml": {"device_code_phishing"},
     "entra/entra_oauth_consent_granted.yml": {"oauth_consent_grant"},
     "entra/entra_user_signin_multiple_ips.yml": {"aitm_cookie_replay"},
+}
+
+
+# False-positive alerts a rule is allowed to leave OPEN after auto-triage, with the reason.
+# Anything above this fails the build, so a rule (or a tuning change) that gets noisier
+# is caught in CI instead of in the SOC queue.
+ALLOWED_OPEN_FALSE_POSITIVES = {
+    # 5 IAM users creating keys for other users from the CLI / console. Real admin work in
+    # the dataset, but not covered by a documented admin workflow, so they stay open on purpose.
+    "aws/aws_access_key_created_for_other_user.yml": 5,
 }
 
 
@@ -116,12 +133,46 @@ def test_rule_fires_on_its_attack(path):
     assert not missing, f"{rule['title']} did not catch: {missing}"
 
 
+KNOWN_BENIGN = load_known_benign()
+
+
+def triaged_alerts(rule):
+    records = records_for_rule(rule, LOGS)
+    return triage(rule, find_alerts(rule, records), records, KNOWN_BENIGN)
+
+
 @pytest.mark.parametrize("path", RULE_FILES, ids=rule_id)
-def test_rule_is_quiet_on_benign(path):
+def test_rule_is_quiet_on_benign_after_triage(path):
     rule = RULES[rule_id(path)]
-    false_alerts = [alert for alert in find_alerts(rule, records_for_rule(rule, LOGS))
-                    if not alert_is_true_positive(alert)]
-    assert not false_alerts, f"{rule['title']} raised {len(false_alerts)} all-benign alert(s)"
+    open_false = [t for t in triaged_alerts(rule)
+                  if t["status"] == "open" and not alert_is_true_positive(t["events"])]
+    allowed = ALLOWED_OPEN_FALSE_POSITIVES.get(rule_id(path), 0)
+    assert len(open_false) <= allowed, (
+        f"{rule['title']} leaves {len(open_false)} false-positive alert(s) open (allowed {allowed})")
+
+
+@pytest.mark.parametrize("path", RULE_FILES, ids=rule_id)
+def test_auto_close_never_hides_an_attack(path):
+    # The most important triage test: suppression must not swallow a true positive.
+    rule = RULES[rule_id(path)]
+    hidden = [t for t in triaged_alerts(rule)
+              if t["status"] == "auto_closed" and alert_is_true_positive(t["events"])]
+    assert not hidden, f"known_benign.yml auto-closed {len(hidden)} real attack alert(s) for {rule['title']}"
+
+
+def test_every_known_benign_entry_is_used_and_honest():
+    titles = {rule["title"] for rule in RULES.values()}
+    used = set()
+    for rule in RULES.values():
+        for t in triaged_alerts(rule):
+            if t["status"] == "auto_closed":
+                used.add(t["reason"].split(":", 1)[0])
+    for entry in KNOWN_BENIGN:
+        assert entry["name"] in used, f"known-benign entry {entry['name']!r} closes nothing: remove it"
+        assert set(entry.get("rules", [])) <= titles, f"{entry['name']!r} names a rule that doesn't exist"
+        text = yaml.safe_dump(entry["match"]).lower()
+        for value in labeling_values():
+            assert value not in text, f"{entry['name']!r} uses labeling value {value!r}"
 
 
 def test_every_log_type_with_rules_has_benign_events():

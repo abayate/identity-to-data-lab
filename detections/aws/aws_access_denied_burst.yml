@@ -1,0 +1,50 @@
+title: AWS API Call Denied
+name: aws_api_call_denied
+id: 99d45c04-fed6-4bcd-ba47-eda0b337e9a1
+status: experimental
+description: Base rule. An AWS API call was refused for lack of permission.
+author: identity-to-data-lab
+date: 2026-10-21
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    errorCode:
+      - AccessDenied
+      - UnauthorizedOperation
+      - Client.UnauthorizedOperation
+  condition: selection
+level: informational
+---
+title: AWS Burst of Access-Denied API Calls by One Identity
+id: 489a7efd-3e7a-431a-8813-06290272f5ea
+status: experimental
+description: >
+  Detects one AWS identity receiving more than 20 access-denied errors within 10 minutes.
+  When someone gets hold of a leaked access key, the first thing they do is find out what
+  it can reach, calling list / describe APIs across many services. A low-privilege key
+  gets refused over and over, while an application using its own key calls the same few
+  APIs it is allowed to and is rarely denied.
+references:
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1580/aws_iam_accessdenied_discovery_events
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.discovery
+  - attack.t1580
+  - attack.t1078.004
+correlation:
+  type: event_count
+  rules:
+    - aws_api_call_denied
+  group-by:
+    - userIdentity.arn
+  timespan: 10m
+  condition:
+    gt: 20
+falsepositives:
+  - Sanctioned security / posture scanners (CloudSploit, Prowler, ScoutSuite) running with
+    read-only policies that don't cover every service; add them to known_benign.yml
+  - A deployment pipeline right after a permissions change breaks it
+level: medium

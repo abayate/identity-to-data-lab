@@ -117,3 +117,102 @@ datasets:
     evidence: >
       Dataset description: "Sample of events when Sharepoint is searched for a sensitive term
       / or high rate of searching." All events come from the dataset's attacker accounts.
+
+  # ---------------------------------------------------------------------------
+  # AWS CloudTrail: leaked key -> discovery -> privilege escalation -> exfiltration
+  # ---------------------------------------------------------------------------
+
+  - name: aws_leaked_key_discovery
+    technique: T1580
+    related_techniques: [T1078.004]
+    scenario: aws_discovery
+    path: T1580/aws_iam_accessdenied_discovery_events/aws_iam_accessdenied_discovery_events.json
+    metadata: T1580/aws_iam_accessdenied_discovery_events/data.yml
+    format: cloudtrail
+    default_label: malicious
+    evidence: >
+      Filed under T1580 (Cloud Infrastructure Discovery). Two low-privilege IAM users ran the
+      open-source scanners CloudSploit and CloudMapper, producing 1,150 calls across dozens of
+      services, nearly all AccessDenied: the pattern a stolen low-privilege key produces when its
+      holder enumerates what it can reach. Note that a sanctioned security scanner produces the
+      same pattern, which is the main false positive for the rule that catches this.
+
+  - name: aws_create_access_key_for_other_user
+    technique: T1098.001
+    related_techniques: [T1078.004]
+    scenario: aws_privilege_escalation
+    path: T1078/aws_createaccesskey/aws_cloudtrail_events.json
+    metadata: T1078/aws_createaccesskey/aws_createaccesskey.yml
+    format: cloudtrail
+    default_label: benign
+    malicious_when:
+      - requestParameters.userName: AtomicRedTeam
+      - userIdentity.userName: rhino_escalate
+    exclude_when:
+      - requestParameters.userName|startswith: attack_test
+      - userIdentity.userName: rod_cli
+        errorCode: NoSuchEntityException
+      - userIdentity.userName: bhavin_cli
+        eventTime: '2021-02-19T00:35:29Z'
+    evidence: >
+      Dataset description: "a user A who has already permission to create access keys, makes an
+      API call to create access keys for another user B ... for Privilege Escalation". The file
+      also holds months of the lab's ordinary admin work. Malicious: keys created for the
+      "AtomicRedTeam" user (the target user of the Atomic Red Team test for this technique) and
+      every call by "rhino_escalate" (named after Rhino Security Labs' IAM privilege-escalation
+      research). Benign: admins creating keys for service and team accounts, and KMS CreateKey
+      calls. Excluded: keys for "attack_test*" users, a failed attempt by rod_cli, and one
+      bhavin_cli self-key call in the middle of the escalation tests: test-looking activity the
+      dataset does not describe, so it can't be labeled with confidence.
+
+  - name: aws_policy_version_privesc
+    technique: T1098.003
+    related_techniques: [T1078.004]
+    scenario: aws_privilege_escalation
+    path: T1078/aws_create_policy_version/aws_cloudtrail_events.json
+    metadata: T1078/aws_create_policy_version/aws_create_policy_version.yml
+    format: cloudtrail
+    default_label: malicious
+    evidence: >
+      Dataset description: "a user created a policy version that allows them to access any
+      resource in their account". All three events are the escalation attempt.
+
+  - name: aws_role_external_trust
+    technique: T1098.003
+    related_techniques: []
+    scenario: aws_persistence_role_trust
+    path: T1098.003/aws_iam_role_created_with_external_trust/aws_iam_role_created_with_external_trust.json
+    metadata: T1098.003/aws_iam_role_created_with_external_trust/aws_iam_role_created_with_external_trust.yml
+    format: cloudtrail
+    default_label: malicious
+    evidence: >
+      Dataset description: "Successful AWS IAM CreateRole events with trust policies allowing
+      sts:AssumeRole by an external AWS account or a wildcard AWS principal. Contains two
+      positive detection examples."
+
+  - name: aws_s3_mass_getobject
+    technique: T1530
+    related_techniques: []
+    scenario: aws_s3_exfiltration
+    path: T1530/aws_exfil_high_no_getobject/cloudtrail.json
+    metadata: T1530/aws_exfil_high_no_getobject/aws_exfil_high_no_getobject_old.yml
+    format: cloudtrail
+    default_label: malicious
+    evidence: >
+      Dataset description: "an AWS exfiltration attempt from S3 buckets, high number of file
+      downloads using GetObject". 100 distinct objects fetched by one identity in one second.
+
+  - name: aws_ebs_snapshot_share
+    technique: T1537
+    related_techniques: []
+    scenario: aws_snapshot_exfiltration
+    path: T1537/aws_snapshot_exfil/aws_cloudtrail_events.json
+    metadata: T1537/aws_snapshot_exfil/aws_snapshot_exfil.yml
+    format: cloudtrail
+    default_label: malicious
+    evidence: >
+      Dataset description: "Adversaries may exfiltrate data by transferring the data, including
+      backups of cloud environments, to another cloud account they control". Includes a run of
+      Stratus Red Team's aws.exfiltration.ec2-share-ebs-snapshot (user agent
+      stratus-red-team_..., snapshot tagged StratusRedTeam). All events are the attack or its
+      setup / cleanup.

@@ -14,4 +14,10 @@ raw copies in `data/raw/splunk_attack_data/`. Labeling rules and evidence:
 | oauth_consent_grant | T1528 | 9 | 1 | 0 | 0 |
 | sharepoint_mass_download | T1567 | 233 | 12 | 0 | 1 |
 | sharepoint_sensitive_search | T1213.002 | 39 | 0 | 0 | 0 |
-| **Total** | | **316** | **21** | **4** | **1** |
+| aws_leaked_key_discovery | T1580 | 1150 | 0 | 0 | 0 |
+| aws_create_access_key_for_other_user | T1098.001 | 31 | 38 | 6 | 0 |
+| aws_policy_version_privesc | T1098.003 | 3 | 0 | 0 | 0 |
+| aws_role_external_trust | T1098.003 | 2 | 0 | 0 | 0 |
+| aws_s3_mass_getobject | T1530 | 100 | 0 | 0 | 0 |
+| aws_ebs_snapshot_share | T1537 | 9 | 0 | 0 | 0 |
+| **Total** | | **1611** | **59** | **10** | **1** |

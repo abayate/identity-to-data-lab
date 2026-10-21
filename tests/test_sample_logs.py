@@ -112,7 +112,7 @@ def test_sample_log_file_is_valid(path):
         assert not problems, f"{path.name} line {line_number}: {problems}"
 
 
-@pytest.mark.parametrize("prefix", ["entra_signins", "m365_audit"])
+@pytest.mark.parametrize("prefix", ["entra_signins", "m365_audit", "cloudtrail"])
 def test_log_type_has_both_labels(prefix):
     # Without both kinds we could not measure a true-positive or a false-positive rate.
     labels = {record["lab_label"]

@@ -7,24 +7,32 @@ how to tune it, and its result in this lab.
 
 **How to read the results:** the numbers come from `python harness/replay.py`. A rule
 "fires" when it raises an alert. An alert is a true positive (TP) if it contains a
-malicious event, and a false positive (FP) if it is all benign. The benign baseline
-in this lab is small (21 events, see `data/sample-logs/README.md`), so **0 FP here
-means "no false positives on the data available," not "won't be noisy in production."**
-Each rule's tuning notes say where production noise would come from.
+malicious event, and a false positive (FP) if it is all benign. "Open FP" is what is
+left after `harness/enrich.py` auto-closes documented known-benign patterns. The benign
+baseline in this lab is small (59 events: 21 identity / M365 and 38 AWS, see
+`data/sample-logs/README.md`), so **0 FP here means "no false positives on the data
+available," not "won't be noisy in production."** Each rule's tuning notes say where
+production noise would come from.
 
 ## Rule index
 
-| Rule | File | Log source | ATT&CK | TP alerts | FP alerts |
-|---|---|---|---|---|---|
-| Entra ID Sign-In Using Device Code Flow | `detections/entra/entra_device_code_signin.yml` | SigninLogs | T1528 | 1 | 0 |
-| Entra ID User Consent Granted to an Application | `detections/entra/entra_oauth_consent_granted.yml` | AuditLogs | T1528 | 1 | 0 |
-| Entra ID User Session Active From Multiple IPs Within One Hour | `detections/entra/entra_user_signin_multiple_ips.yml` | SigninLogs | T1550.004, T1078.004 | 3 | 0 |
-| M365 Mass File Access or Download by One User | `detections/data/m365_mass_file_access.yml` | OfficeActivity | T1530, T1567 | 4 | 0 |
-| M365 File Download With Rclone User Agent | `detections/data/m365_rclone_download.yml` | OfficeActivity | T1567, T1530 | 58 | 0 |
-| M365 Search for Credential or Payroll Terms | `detections/data/m365_sensitive_term_search.yml` | OfficeActivity | T1213.002 | 12 | 0 |
-| Data Access Within One Hour of a Multi-IP Entra Session | `detections/data/identity_to_data_access_after_multi_ip_session.yml` | SigninLogs + OfficeActivity | T1530, T1114.002, T1078.004 | 1 | 0 |
+| Rule | File | Log source | ATT&CK | TP alerts | FP alerts | Open FP after triage |
+|---|---|---|---|---|---|---|
+| Entra ID Sign-In Using Device Code Flow | `detections/entra/entra_device_code_signin.yml` | SigninLogs | T1528 | 1 | 0 | 0 |
+| Entra ID User Consent Granted to an Application | `detections/entra/entra_oauth_consent_granted.yml` | AuditLogs | T1528 | 1 | 0 | 0 |
+| Entra ID User Session Active From Multiple IPs Within One Hour | `detections/entra/entra_user_signin_multiple_ips.yml` | SigninLogs | T1550.004, T1078.004 | 3 | 0 | 0 |
+| M365 Mass File Access or Download by One User | `detections/data/m365_mass_file_access.yml` | OfficeActivity | T1530, T1567 | 4 | 0 | 0 |
+| M365 File Download With Rclone User Agent | `detections/data/m365_rclone_download.yml` | OfficeActivity | T1567, T1530 | 58 | 0 | 0 |
+| M365 Search for Credential or Payroll Terms | `detections/data/m365_sensitive_term_search.yml` | OfficeActivity | T1213.002 | 12 | 0 | 0 |
+| Data Access Within One Hour of a Multi-IP Entra Session | `detections/data/identity_to_data_access_after_multi_ip_session.yml` | SigninLogs + OfficeActivity | T1530, T1114.002, T1078.004 | 1 | 0 | 0 |
+| AWS Burst of Access-Denied API Calls by One Identity | `detections/aws/aws_access_denied_burst.yml` | CloudTrail | T1580, T1078.004 | 2 | 0 | 0 |
+| AWS Access Key Created for a Different IAM User | `detections/aws/aws_access_key_created_for_other_user.yml` | CloudTrail | T1098.001 | 28 | 28 | 5 |
+| AWS IAM Policy Version Set as Default With Wildcard Actions | `detections/aws/aws_policy_version_grants_wildcard.yml` | CloudTrail | T1098.003, T1078.004 | 3 | 0 | 0 |
+| AWS IAM Role Created Trusting Any Principal or a Whole Account | `detections/aws/aws_role_trust_wildcard_or_account.yml` | CloudTrail | T1098.003 | 2 | 0 | 0 |
+| AWS S3 Mass Object Download by One Identity | `detections/aws/aws_s3_mass_getobject.yml` | CloudTrail | T1530 | 1 | 0 | 0 |
+| AWS EBS Snapshot Shared With Another Account or Made Public | `detections/aws/aws_ebs_snapshot_shared.yml` | CloudTrail | T1537 | 6 | 0 | 0 |
 
-**Whole chain:** 274 of 316 malicious events (87%) are part of at least one alert.
+**Whole chain:** 1,563 of 1,611 malicious events (97%) are part of at least one alert.
 
 ## Entra identity detections
 
@@ -254,8 +262,203 @@ replaying IP 33 seconds after its first sign-in from that second IP. 0 FP.
 
 ## AWS detections
 
-_Phase 4._
+These rules read CloudTrail with AWS's own field names (`eventName`, `userIdentity.arn`,
+`requestParameters...`), which is what Sigma's `aws/cloudtrail` rules, Athena and
+CloudTrail Lake use. The KQL targets Sentinel's `AWSCloudTrail` table, which flattens
+and renames them (`EventName`, `UserIdentityArn`, `RequestParameters` as a JSON string).
+
+**The chain:** a leaked key is used to look around (discovery), to gain more rights
+(privilege escalation and persistence), then to take data (S3 and snapshot exfiltration).
+The step where the key leaks (T1552.001, e.g. a key committed to GitHub) happens outside
+AWS and leaves no CloudTrail event, so it stays a gap in the coverage map. See the
+GuardDuty comparison for what covers it.
+
+**Dataset caveat:** each AWS dataset comes from a different Splunk test account and run,
+so no single identity walks the whole chain. The rules are tested step by step. A
+cross-step correlation (e.g. "discovery burst, then privilege escalation by the same key")
+is the natural next rule once a live run produces a connected trail (see `05-go-live.md`).
+
+### AWS Burst of Access-Denied API Calls by One Identity
+
+**Catches:** someone enumerating an account with a key they shouldn't have. The dataset
+shows the scanners CloudSploit and CloudMapper running as low-privilege users: 1,150 calls
+across dozens of services in two hours, nearly all refused.
+
+**Sigma logic:** correlation, `event_count` > 20 of `errorCode` in (`AccessDenied`,
+`UnauthorizedOperation`, `Client.UnauthorizedOperation`) per `userIdentity.arn` in 10 minutes.
+
+```kql
+AWSCloudTrail
+| where ErrorCode in ("AccessDenied", "UnauthorizedOperation", "Client.UnauthorizedOperation")
+| summarize Denied = count(), Services = make_set(EventSource), Calls = make_set(EventName, 25),
+            IPs = make_set(SourceIpAddress)
+    by UserIdentityArn, bin(TimeGenerated, 10m)
+| where Denied > 20
+```
+
+**Tuning:** the dataset itself shows the main FP: a sanctioned posture scanner whose
+read-only policy doesn't cover every service looks exactly like this. Allow-list scanner
+identities in `known_benign.yml`. Expect a burst after a deployment breaks permissions too.
+
+**Lab result:** 2 TP alerts (one per scanner identity), 0 FP.
+
+### AWS Access Key Created for a Different IAM User
+
+**Catches:** privilege escalation / persistence by minting a key for another user
+(Stratus Red Team: `aws.persistence.iam-backdoor-user`).
+
+**Sigma logic:** `CreateAccessKey` where `requestParameters.userName` is present and is
+**not** the caller. Comparing two fields of one event uses Sigma v2's `|fieldref` modifier:
+`requestParameters.userName|fieldref: userIdentity.userName`.
+
+```kql
+AWSCloudTrail
+| where EventSource == "iam.amazonaws.com" and EventName == "CreateAccessKey"
+| extend TargetUser = tostring(parse_json(RequestParameters).userName)
+| where isnotempty(TargetUser) and TargetUser !~ UserIdentityUserName
+// known-benign: federated admins provisioning keys from the console
+| where not(UserIdentityType == "AssumedRole"
+            and UserIdentityArn contains ":assumed-role/okta_adm_role/"
+            and UserAgent == "console.amazonaws.com")
+| project TimeGenerated, UserIdentityArn, TargetUser, SourceIpAddress, UserAgent
+```
+
+**Tuning (the triage story):** this is the one rule the public data makes noisy, because
+the dataset includes months of the lab team's real admin work. Raw: 28 TP and **28 FP
+(73.7% of benign events)**. 23 of the 28 FPs are admins who signed in through Okta into
+`okta_adm_role` and created keys in the console: an approved workflow. One documented
+`known_benign.yml` entry auto-closes exactly those, and **the analyst-facing FP rate drops
+to 13.2%** (5 open). The remaining 5 are IAM users creating keys from the CLI or with
+long-lived credentials; they stay open on purpose, because that's how a real attacker with
+a stolen admin key would look. Tests check that the entry never closes a true positive
+and cap open FPs at 5, so any drift fails CI.
+
+**Lab result:** 28 TP alerts (Atomic Red Team's target user, plus Rhino-style escalation
+attempts), 28 FP raw, 23 auto-closed, 5 open.
+
+### AWS IAM Policy Version Set as Default With Wildcard Actions
+
+**Catches:** the classic "rewrite my own policy to admin" escalation.
+
+**Sigma logic:** `CreatePolicyVersion`, `setAsDefault: true`, and the policy document
+matches `"Action": "*"` or `"Action": "iam:*"` (regex, whitespace-tolerant).
+
+```kql
+AWSCloudTrail
+| where EventSource == "iam.amazonaws.com" and EventName == "CreatePolicyVersion"
+| extend Params = parse_json(RequestParameters)
+| where tobool(Params.setAsDefault)
+    and tostring(Params.policyDocument) matches regex @'"Action"\s*:\s*\[?\s*"(\*|iam:\*)"'
+| project TimeGenerated, UserIdentityArn, PolicyArn = tostring(Params.policyArn), SourceIpAddress
+```
+
+**Tuning:** rare in production. Watch for sandbox / break-glass accounts. Known gap: the
+regex checks the first entry of an action list, so `["s3:GetObject", "*"]` slips through.
+Parsing the JSON in KQL (`mv-expand` the statements) closes it.
+
+**Lab result:** 3 TP alerts (including one failed attempt, which is still worth seeing), 0 FP.
+
+### AWS IAM Role Created Trusting Any Principal or a Whole Account
+
+**Catches:** a backdoor role that an attacker's own account can assume
+(Stratus Red Team: `aws.persistence.iam-create-backdoor-role`).
+
+**Sigma logic:** `CreateRole` whose trust policy has `"AWS": "*"` or
+`"AWS": "arn:aws:iam::<12 digits>:root"`.
+
+```kql
+AWSCloudTrail
+| where EventSource == "iam.amazonaws.com" and EventName == "CreateRole"
+| extend Trust = tostring(parse_json(RequestParameters).assumeRolePolicyDocument)
+| where Trust matches regex @'"AWS"\s*:\s*"(\*|arn:aws:iam::\d{12}:root)"'
+| extend TrustedAccount = extract(@"arn:aws:iam::(\d{12}):root", 1, Trust)
+| where TrustedAccount != RecipientAccountId   // KQL can do what Sigma can't: drop same-account trust
+| project TimeGenerated, UserIdentityArn, TrustedAccount, Trust
+```
+
+**Tuning:** Sigma can't compare the account inside the policy with `recipientAccountId`
+(a value inside a string vs. another field), so the Sigma version also fires on
+same-account trusts. The KQL version removes those. Legitimate cross-account roles
+(security tooling, CI/CD, partners) need an allow-list. AWS IAM Access Analyzer is the
+native control for "who outside my account can assume this".
+
+**Lab result:** 2 TP alerts (one wildcard, one external account), 0 FP.
+
+### AWS S3 Mass Object Download by One Identity
+
+**Catches:** bulk copying of a bucket by one identity: the AWS twin of the M365 mass-download rule.
+
+**Sigma logic:** correlation, `event_count` > 50 `GetObject` per `userIdentity.arn` in 10 minutes.
+
+```kql
+AWSCloudTrail
+| where EventSource == "s3.amazonaws.com" and EventName == "GetObject"
+| summarize Objects = count(), Buckets = make_set(tostring(parse_json(RequestParameters).bucketName)),
+            IPs = make_set(SourceIpAddress)
+    by UserIdentityArn, bin(TimeGenerated, 10m)
+| where Objects > 50
+```
+
+**Tuning:** requires **CloudTrail S3 data events**, which are off by default and billed
+per event. Without them this rule is blind. Apps, ETL and analytics roles read many
+objects by design, so scope the rule to human identities or sensitive buckets, or baseline per role.
+
+**Lab result:** 1 TP alert (100 objects in one second), 0 FP.
+
+### AWS EBS Snapshot Shared With Another Account or Made Public
+
+**Catches:** exfiltrating a whole disk by sharing its snapshot
+(Stratus Red Team: `aws.exfiltration.ec2-share-ebs-snapshot`; one run in the dataset
+carries the Stratus user agent).
+
+**Sigma logic:** `ModifySnapshotAttribute` that **adds** create-volume permission for an
+account id or for group `all`. The permission is a list inside the event
+(`requestParameters.createVolumePermission.add.items[]`), which the matcher walks.
+
+```kql
+AWSCloudTrail
+| where EventSource == "ec2.amazonaws.com" and EventName == "ModifySnapshotAttribute"
+| extend Added = parse_json(RequestParameters).createVolumePermission.add.items
+| mv-expand Added
+| where isnotempty(tostring(Added.userId)) or tostring(Added.group) == "all"
+| project TimeGenerated, UserIdentityArn, SourceIpAddress,
+          SharedWith = iff(tostring(Added.group) == "all", "PUBLIC", tostring(Added.userId))
+```
+
+**Tuning:** backup / DR tooling that copies snapshots to a dedicated backup account should
+be allow-listed by destination account. Public sharing should always be reviewed.
+
+**Lab result:** 6 TP alerts, 0 FP. The 3 malicious events not alerted on are the
+attack's setup (`CreateSnapshot`), its cleanup (removing public access), and an empty
+"add" call. None of them shares anything.
 
 ## GuardDuty vs. custom rules
 
-_Phase 4._
+Amazon GuardDuty is AWS's managed threat-detection service. It combines threat
+intelligence (known-bad IPs, Tor, known-compromised keys) with a machine-learning model
+that baselines each identity and flags `AnomalousBehavior`. The question for each step
+is what each approach would flag, and why you'd want both.
+
+**How this was built:** the public datasets contain no GuardDuty findings, so this table
+is reasoning from AWS's published finding types
+([IAM](https://docs.aws.amazon.com/guardduty/latest/ug/guardduty_finding-types-iam.html),
+[S3](https://docs.aws.amazon.com/guardduty/latest/ug/guardduty_finding-types-s3.html)),
+not measured output. Running GuardDuty against a live Stratus Red Team detonation to fill
+in an "actually fired?" column is a go-live step (`05-go-live.md`).
+
+| Attack step | Custom rule here | GuardDuty finding(s) that could fire | Who wins, and why |
+|---|---|---|---|
+| Key leaks (T1552.001) | **None:** the leak happens outside AWS, no CloudTrail event | `CredentialAccess:IAMUser/CompromisedCredentials` (key flagged by Amazon threat intel, then used) | **GuardDuty.** It has intel we can't see. A custom rule only sees what the key does next. |
+| Discovery with the key (T1580) | Access-denied burst (> 20 in 10 min) | `Discovery:IAMUser/AnomalousBehavior` (low severity); `Recon:IAMUser/MaliciousIPCaller` / `TorIPCaller` if the IP is on a list; `PenTest:IAMUser/KaliLinux` from Kali | **Both.** Ours catches the noisy failed burst on day one with no learning period. GuardDuty can also catch *quiet, successful* recon that produces no errors, which ours misses. |
+| Key minted for another user (T1098.001) | `CreateAccessKey` with target ≠ caller (`fieldref`) + known-benign triage | `Persistence:IAMUser/AnomalousBehavior` (AWS lists `CreateAccessKey` as an example API) | **Different trade-offs.** GuardDuty's baseline would likely ignore routine admins (fewer FPs), but it also skips an attacker whose activity fits the stolen identity's normal pattern. Ours is deterministic and explainable, but needed tuning (73.7% → 13.2% FP). |
+| Policy rewritten to admin (T1098.003) | `CreatePolicyVersion` + wildcard action | `PrivilegeEscalation:IAMUser/AnomalousBehavior` (policy, role and user changes) | **Custom.** Ours checks *what the policy grants*. AWS describes the GuardDuty finding in terms of how unusual the API call is, not the permissions in the document. |
+| Backdoor role trusting another account (T1098.003) | `CreateRole` with `*` / account-root trust | No dedicated finding; possibly `Persistence:` / `PrivilegeEscalation:` AnomalousBehavior | **Custom (plus IAM Access Analyzer).** GuardDuty has no "external trust" finding. Access Analyzer is the AWS-native control for external access. |
+| Mass S3 download (T1530) | > 50 `GetObject` in 10 min | `Exfiltration:S3/AnomalousBehavior`, `Exfiltration:S3/MaliciousIPCaller` (need **S3 Protection**) | **GuardDuty, slightly.** Both need S3 data-event visibility, but GuardDuty baselines per identity and bucket, so a role that always reads a lot isn't flagged. Ours needs data events in your own trail (paid) and a fixed threshold. |
+| Snapshot shared out (T1537) | `ModifySnapshotAttribute` adding an account / `all` | `Exfiltration:IAMUser/AnomalousBehavior` (AWS lists snapshot APIs), only if unusual for the caller | **Custom.** Sharing a snapshot outside the account is worth an alert every time, anomalous or not. Ours fires deterministically. |
+
+**Takeaway:** GuardDuty is strongest where you can't write a rule: threat intel, leaked-key
+reputation, and "this identity has never done that before." Custom rules are strongest
+where the *content* of the call is the signal (what a policy grants, who a role trusts,
+where a snapshot goes), and where you need deterministic, CI-tested behavior with a written
+reason for every suppression. Run both, and send GuardDuty findings into the same triage
+pipeline (`harness/enrich.py`) so analysts see one queue.

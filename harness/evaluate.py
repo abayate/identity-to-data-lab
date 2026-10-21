@@ -10,6 +10,7 @@ Supported Sigma features:
     match (AND). A list of values for one field means any of them (OR).
     A selection written as a list of maps matches if any map matches (OR).
   - Field modifiers: |contains, |startswith, |endswith, |re, |gt, |gte, |lt, |lte,
+    |fieldref (compare with another field of the same event),
     and |all (every listed value must match instead of any).
   - Conditions using: and, or, not, parentheses, "1 of name*", "all of name*".
   - Correlation rules (Sigma v2). A correlation is a YAML document with a
@@ -170,11 +171,20 @@ def get_field(record, field):
 
     CloudTrail nests data, so Sigma rules write `userIdentity.type` to mean
     record["userIdentity"]["type"]. A flat key with a literal dot wins if present.
+    If the path runs into a list, the rest of the path is looked up in every list
+    item and a list of the values found is returned, e.g.
+    `createVolumePermission.add.items.userId` -> ["111122223333", ...].
     """
     if field in record:
         return record[field]
     value = record
-    for part in field.split("."):
+    parts = field.split(".")
+    for index, part in enumerate(parts):
+        if isinstance(value, list):
+            rest = ".".join(parts[index:])
+            found = [get_field(item, rest) for item in value if isinstance(item, dict)]
+            found = [item for item in found if item is not None]
+            return found or None
         if not isinstance(value, dict) or part not in value:
             return None
         value = value[part]
@@ -193,7 +203,18 @@ def field_matches(record, field_spec, expected):
 
     actual = get_field(record, field)
     expected_values = expected if isinstance(expected, list) else [expected]
-    results = [value_matches(actual, value, modifier) for value in expected_values]
+    # A list value (from a list inside the event) matches if any of its items matches.
+    candidates = actual if isinstance(actual, list) else [actual]
+
+    def matches(value):
+        if modifier == "fieldref":
+            # |fieldref compares against ANOTHER field of the same record (Sigma v2),
+            # e.g. "the user a key was created for is the caller themself".
+            other = get_field(record, value)
+            return other is not None and any(value_matches(c, other, None) for c in candidates)
+        return any(value_matches(c, value, modifier) for c in candidates)
+
+    results = [matches(value) for value in expected_values]
     return all(results) if require_all else any(results)
 
 
@@ -358,12 +379,19 @@ def flag_windows(tagged_events, timespan, window_qualifies):
     `window_qualifies(window)` decides if that window meets the rule's condition.
     """
     tagged_events = sorted(tagged_events, key=lambda pair: event_time(pair[1]))
-    flagged = []
-    for start_index, (_, start) in enumerate(tagged_events):
-        window = [(tag, event) for tag, event in tagged_events[start_index:]
-                  if event_time(event) - event_time(start) <= timespan]
+    times = [event_time(event) for _, event in tagged_events]
+    flagged, flagged_ids = [], set()
+    end = 0
+    # Two pointers: `end` only moves forward, so each window is found without rescanning.
+    for start in range(len(tagged_events)):
+        while end < len(tagged_events) and times[end] - times[start] <= timespan:
+            end += 1
+        window = tagged_events[start:end]
         if window_qualifies(window):
-            flagged.extend(event for _, event in window if not any(event is f for f in flagged))
+            for _, event in window:
+                if id(event) not in flagged_ids:  # id() = this exact event object
+                    flagged_ids.add(id(event))
+                    flagged.append(event)
     return sorted(flagged, key=event_time)
 
 

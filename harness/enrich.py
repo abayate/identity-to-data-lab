@@ -74,8 +74,9 @@ def build_context(alert_events, all_records):
     user = user_of(alert_events[0])
     if user is None:
         return {"user": None, "events_in_alert": len(alert_events)}
+    in_alert = {id(event) for event in alert_events}
     history = [other for other in all_records
-               if user_of(other) == user and not any(other is e for e in alert_events)]
+               if id(other) not in in_alert and user_of(other) == user]
     context = {"user": user, "events_in_alert": len(alert_events),
                "other_events_for_user": len(history)}
     for field in HISTORY_FIELDS:

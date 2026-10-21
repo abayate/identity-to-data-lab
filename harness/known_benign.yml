@@ -10,10 +10,18 @@
 #     match:              # same syntax as a Sigma selection
 #       FieldName: value
 #
-# Entries are added alongside the rules they tune (Phase 2 onward). Example shape:
-#
-# - name: corporate-vpn-egress
-#   reason: All staff traffic exits through the corporate VPN range, so a "new IP" there is not new.
-#   match:
-#     IPAddress|startswith: '198.51.100.'
-[]
+# An alert is only auto-closed if EVERY event in it matches the same entry.
+
+- name: federated-admins-console-key-provisioning
+  reason: >
+    The cloud team provisions IAM access keys for service and team accounts from the AWS
+    console after signing in through the company IdP (Okta) into the okta_adm_role
+    admin role. That role requires IdP MFA and is limited to the cloud team, so a key
+    created this way is an approved admin action. Keys created any other way (CLI,
+    long-lived IAM user keys, root) stay open for review.
+  rules:
+    - AWS Access Key Created for a Different IAM User
+  match:
+    userIdentity.type: AssumedRole
+    userIdentity.arn|contains: ':assumed-role/okta_adm_role/'
+    userAgent: console.amazonaws.com

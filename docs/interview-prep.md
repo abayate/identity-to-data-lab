@@ -481,3 +481,57 @@ side is wrong before changing code.
 3. Your mass-download rule produced 4 alerts but rclone produced 58. Why, and does it matter?
 4. How would an attacker beat each data rule? What would still catch them?
 5. Why is `MailItemsAccessed` in the data-access base rule? What licensing does it need in real M365?
+
+---
+
+## Phase 4 — AWS: leaked key → escalation → exfiltration, and GuardDuty vs custom
+
+### The 30-second version
+
+> "For the AWS branch I used six public CloudTrail datasets covering discovery with a
+> stolen key, two privilege-escalation paths, a backdoor role, S3 mass download, and
+> snapshot sharing, which was partly produced with Stratus Red Team. Six rules catch every
+> step. One was noisy on real admin activity, 73.7% FP, so I added one documented
+> known-benign entry that cut what analysts see to 13.2% without hiding a single attack,
+> and CI enforces both of those facts. I also compared each step with what GuardDuty would
+> flag: GuardDuty wins on threat intel and baselining, custom rules win when the content
+> of the API call is the signal."
+
+### The best story in the project: the noisy rule
+
+"Create an access key for a different user" fired 56 times: 28 attacks and 28 admins doing
+their jobs. I didn't loosen the rule. I looked at *who* the false positives were: 23 came
+from federated admins in the console through an Okta role, which is an approved workflow.
+One known-benign entry with a written reason closed exactly those. The other 5 stayed open
+on purpose, because a stolen admin key would look like them. Then I wrote two tests: one
+caps open FPs at 5, and one fails if suppression ever closes a true positive.
+
+### What's `fieldref` and why did you need it?
+
+Normal Sigma compares a field to a constant. "Key created for someone other than the
+caller" compares two fields of the same event: `requestParameters.userName` vs
+`userIdentity.userName`. Sigma v2 added the `|fieldref` modifier for that, so I added it
+to the matcher. Gotcha: federated (AssumedRole) callers have no `userName`, so their keys
+always look like "for someone else", which is where most of the noise came from.
+
+### Where does Sigma fall short, and what did you do?
+
+The role-trust rule wants "trusted account ≠ this account", but the account is inside a
+JSON string and the other value is a separate field. Sigma can't express that. The KQL
+version can (`extract()` then compare to `RecipientAccountId`), so the doc gives both and
+says which is stricter. Knowing a tool's limits is part of the job.
+
+### A performance bug I hit
+
+Adding 1,150 CloudTrail events made the suite go from about 1 second to 42. The sliding window
+rescanned every event for every window start, and removed duplicates with a list scan:
+quadratic twice over. A two-pointer window plus an ID set brought it back to about 2 seconds.
+Lesson: correlation over big log volumes is where naive code hurts first.
+
+### Practice questions
+
+1. Why is the key-leak step a gap in your coverage map? What would cover it?
+2. Your S3 rule is "blind by default". Why, and what does turning it on cost?
+3. Which GuardDuty finding would you trust more than your own rule, and why?
+4. What's the risk of the known-benign entry you wrote? How would an attacker abuse it?
+5. Why keep a failed `CreatePolicyVersion` attempt as an alert?

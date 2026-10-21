@@ -1,0 +1,38 @@
+title: AWS Access Key Created for a Different IAM User
+id: 2cdec53e-6068-4136-b2dc-47f6ef696725
+status: experimental
+description: >
+  Detects CreateAccessKey where the target user is not the caller. Anyone with
+  iam:CreateAccessKey on another user can mint a long-lived key for that user and act as
+  them: privilege escalation if the target has more rights, and persistence that survives
+  the original key being revoked. Creating a key for yourself is routine; creating one for
+  someone else is an admin task worth confirming.
+references:
+  - https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/
+  - https://stratus-red-team.cloud/attack-techniques/AWS/aws.persistence.iam-backdoor-user/
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1078/aws_createaccesskey
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.persistence
+  - attack.privilege_escalation
+  - attack.t1098.001
+logsource:
+  product: aws
+  service: cloudtrail
+detection:
+  selection:
+    eventSource: iam.amazonaws.com
+    eventName: CreateAccessKey
+  filter_own_key:
+    requestParameters.userName|fieldref: userIdentity.userName
+  filter_no_target:
+    # With no userName parameter, AWS creates the key for the caller.
+    requestParameters.userName: null
+  condition: selection and not 1 of filter_*
+falsepositives:
+  - Admins provisioning keys for service accounts and new team members (common; see the
+    known-benign entry for federated admins working in the console)
+  - Federated (AssumedRole) callers have no userIdentity.userName, so any key they create
+    looks like "for someone else"; the known-benign entry handles the expected admin role
+level: medium

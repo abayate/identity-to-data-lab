@@ -27,6 +27,8 @@ PLANNED_TECHNIQUES = [
     ("T1114.002", "Email Collection: Remote Email Collection", "Data"),
     ("T1567", "Exfiltration Over Web Service", "Data"),
     ("T1552.001", "Unsecured Credentials: Credentials In Files", "AWS"),
+    ("T1580", "Cloud Infrastructure Discovery", "AWS"),
+    ("T1098.001", "Account Manipulation: Additional Cloud Credentials", "AWS"),
     ("T1098.003", "Account Manipulation: Additional Cloud Roles", "AWS"),
     ("T1537", "Transfer Data to Cloud Account", "AWS"),
 ]
