@@ -360,3 +360,67 @@ your own words:
 2. What does `test_committed_sample_logs_are_up_to_date` protect against?
 3. Why does `.gitattributes` force LF line endings for `data/sample-logs/`?
 4. Why are only 21 benign events a problem, and how would you fix it?
+
+---
+
+## Phase 2 — Entra identity detections
+
+### The 30-second version
+
+> "I wrote three Sigma rules for the identity stage: device-code sign-ins, OAuth consent
+> grants, and one user signing in from multiple IPs within an hour, which is how AiTM
+> cookie replay shows up. The last one is a Sigma correlation rule, so I extended my
+> matcher to group events and count distinct values in a sliding window. Each rule
+> fires on its public-dataset attack and raises no all-benign alerts, and the tests
+> also stop any rule from reading the answer key."
+
+### Walk through each rule in one sentence
+
+| Rule | One-sentence logic | Biggest FP source |
+|---|---|---|
+| Device code sign-in | `AuthenticationProtocol == deviceCode` | Admins using CLIs, meeting-room devices |
+| OAuth consent granted | Audit `Consent to application`, success | Users approving real third-party apps |
+| Multiple IPs in 1h | ≥2 distinct IPs per user in a sliding hour | Roaming users, VPN, IPv4 + IPv6 |
+
+### What's a correlation rule and why did you need one?
+
+A normal rule looks at one event at a time. Cookie replay isn't visible in any single
+event, because each sign-in looks fine on its own. It only shows when you compare the
+same user's sign-ins: two IPs at once. Sigma v2 handles this with a second YAML document
+(`correlation:`) that groups the base rule's matches (`group-by: UserPrincipalName`) and
+counts distinct values (`value_count` of `IPAddress`) inside a `timespan`.
+
+### Why score alerts instead of events?
+
+An analyst gets alerts, not events. The multi-IP alert for the phished device-code user
+includes their normal sign-ins too, but the alert itself is correct. Counting those 8
+normal events as 8 false positives would punish the rule for being right. So an alert is
+a TP if it holds any malicious event, and an FP if it's all benign.
+
+### Why did T1566 and T1539 stay gaps?
+
+The phishing email (T1566) is in mail-flow logs, not sign-in logs. The cookie theft
+(T1539) happens on the attacker's proxy, which we never see. Sign-in logs only show the
+**use** of the stolen cookie (T1550.004). An honest coverage map shows what each log
+source can and can't see.
+
+### How do the tests stop a rule from cheating?
+
+`test_rule_does_not_read_the_answer_key` fails if a rule mentions any `lab_` field, or
+any literal value `sources.yml` used to decide labels (like the attacker IP `4.4.4.4`).
+A rule matching on the labeling IP would score 100% and detect nothing in real life.
+
+### Why is there a test that *expects* a false positive?
+
+`test_multi_ip_rule_known_false_positive_roaming_user` builds a normal user who moves
+from office Wi-Fi to a hotspot, and asserts the rule **does** fire. The public data has
+no roaming users, so without this test the 0% FP number would hide a real weakness.
+Writing limitations down as tests keeps them from being forgotten.
+
+### Practice questions
+
+1. Why does the multi-IP rule's base rule exclude events with no `UserPrincipalName`?
+2. The KQL uses `bin(TimeGenerated, 1h)`, but the matcher uses a sliding window. Give a case where they disagree.
+3. How would the multi-IP rule change if you had `SessionId`?
+4. Device-code phishing gets past MFA. Why? What control actually stops it?
+5. A consent-grant victim resets their password. Is the attacker locked out? Why or why not?

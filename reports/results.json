@@ -1,7 +1,51 @@
 {
-  "rules": [],
-  "chain_caught": 0,
-  "chain_total": 0,
+  "rules": [
+    {
+      "rule": "Entra ID Sign-In Using Device Code Flow",
+      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\entra\\entra_device_code_signin.yml",
+      "techniques": [
+        "T1528"
+      ],
+      "events_checked": 43,
+      "hits": 1,
+      "true_positives": 1,
+      "false_positives": 0,
+      "auto_closed": 0,
+      "fp_rate": 0.0,
+      "fp_rate_after_triage": 0.0
+    },
+    {
+      "rule": "Entra ID User Consent Granted to an Application",
+      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\entra\\entra_oauth_consent_granted.yml",
+      "techniques": [
+        "T1528"
+      ],
+      "events_checked": 5,
+      "hits": 1,
+      "true_positives": 1,
+      "false_positives": 0,
+      "auto_closed": 0,
+      "fp_rate": 0.0,
+      "fp_rate_after_triage": 0.0
+    },
+    {
+      "rule": "Entra ID User Session Active From Multiple IPs Within One Hour",
+      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\entra\\entra_user_signin_multiple_ips.yml",
+      "techniques": [
+        "T1078.004",
+        "T1550.004"
+      ],
+      "events_checked": 43,
+      "hits": 3,
+      "true_positives": 3,
+      "false_positives": 0,
+      "auto_closed": 0,
+      "fp_rate": 0.0,
+      "fp_rate_after_triage": 0.0
+    }
+  ],
+  "chain_caught": 28,
+  "chain_total": 316,
   "coverage": [
     {
       "id": "T1566",
@@ -14,8 +58,11 @@
       "id": "T1528",
       "name": "Steal Application Access Token",
       "branch": "Identity",
-      "status": "gap",
-      "rules": []
+      "status": "tested",
+      "rules": [
+        "Entra ID Sign-In Using Device Code Flow",
+        "Entra ID User Consent Granted to an Application"
+      ]
     },
     {
       "id": "T1539",
@@ -25,15 +72,40 @@
       "rules": []
     },
     {
+      "id": "T1550.004",
+      "name": "Use Alternate Auth Material: Web Session Cookie",
+      "branch": "Identity",
+      "status": "tested",
+      "rules": [
+        "Entra ID User Session Active From Multiple IPs Within One Hour"
+      ]
+    },
+    {
       "id": "T1078.004",
       "name": "Valid Accounts: Cloud Accounts",
       "branch": "Identity",
+      "status": "tested",
+      "rules": [
+        "Entra ID User Session Active From Multiple IPs Within One Hour"
+      ]
+    },
+    {
+      "id": "T1213.002",
+      "name": "Data from Info Repositories: SharePoint",
+      "branch": "Data",
       "status": "gap",
       "rules": []
     },
     {
       "id": "T1530",
       "name": "Data from Cloud Storage",
+      "branch": "Data",
+      "status": "gap",
+      "rules": []
+    },
+    {
+      "id": "T1567",
+      "name": "Exfiltration Over Web Service",
       "branch": "Data",
       "status": "gap",
       "rules": []

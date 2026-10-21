@@ -1,0 +1,31 @@
+title: Entra ID Sign-In Using Device Code Flow
+id: a12f8b30-a267-46d8-9947-9d3a45963f34
+status: experimental
+description: >
+  Detects a user sign-in that used the OAuth device authorization grant ("device code
+  flow"). The flow exists for input-limited devices (TVs, CLIs, conference-room kits), so
+  ordinary users rarely use it. In device-code phishing, the attacker starts the flow,
+  sends the victim the code, and receives the victim's tokens once the victim enters it.
+  The resulting sign-in carries AuthenticationProtocol = deviceCode.
+references:
+  - https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1528/device_code_authentication
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.initial_access
+  - attack.credential_access
+  - attack.t1528
+logsource:
+  product: azure
+  service: signinlogs
+detection:
+  selection:
+    AuthenticationProtocol: deviceCode
+  condition: selection
+falsepositives:
+  - Admins and developers signing in to CLIs (Azure CLI, PowerShell) with device code
+  - Shared devices such as Teams Rooms or kiosks
+  - Tune with a known-benign entry per sanctioned app or per admin group, or block the
+    flow with a Conditional Access authentication-flows policy and alert on any success
+level: medium

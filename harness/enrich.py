@@ -65,37 +65,49 @@ def user_of(record):
     return None
 
 
-def build_context(record, all_records):
-    """Describe how this event compares to everything else the same user did."""
-    user = user_of(record)
+def build_context(alert_events, all_records):
+    """Describe how the events in one alert compare to everything else the same user did.
+
+    For each history field (IP, ASN, country...), list the values seen in the alert and
+    whether any of them is new for this user, i.e. never seen in the user's other events.
+    """
+    user = user_of(alert_events[0])
     if user is None:
-        return {"user": None}
-    history = [other for other in all_records if other is not record and user_of(other) == user]
-    context = {"user": user, "other_events_for_user": len(history)}
+        return {"user": None, "events_in_alert": len(alert_events)}
+    history = [other for other in all_records
+               if user_of(other) == user and not any(other is e for e in alert_events)]
+    context = {"user": user, "events_in_alert": len(alert_events),
+               "other_events_for_user": len(history)}
     for field in HISTORY_FIELDS:
-        value = get_field(record, field)
-        if value is None:
+        values = sorted({str(v) for v in (get_field(e, field) for e in alert_events) if v is not None})
+        if not values:
             continue
-        seen_before = any(get_field(other, field) == value for other in history)
-        context[f"new_{field}_for_user"] = not seen_before
+        seen_before = {str(get_field(other, field)) for other in history}
+        context[f"{field}_values"] = values
+        context[f"new_{field}_for_user"] = any(value not in seen_before for value in values)
     return context
 
 
-def triage(rule, hits, all_records, entries):
-    """Turn a rule's raw hits into triaged alerts (auto_closed or open, with context)."""
-    alerts = []
-    for record in hits:
-        benign_entry = find_known_benign(record, rule, entries)
-        if benign_entry:
-            alerts.append({
+def triage(rule, alerts, all_records, entries):
+    """Triage a rule's alerts: auto-close known-benign ones, add context to the rest.
+
+    An alert is auto-closed only if EVERY event in it matches the same known-benign
+    entry. One unexplained event is enough to keep it open for a human.
+    """
+    triaged = []
+    for alert_events in alerts:
+        matches = [find_known_benign(event, rule, entries) for event in alert_events]
+        first = matches[0]
+        if first is not None and all(match is first for match in matches):
+            triaged.append({
                 "status": "auto_closed",
-                "reason": f"{benign_entry['name']}: {benign_entry['reason']}",
-                "record": record,
+                "reason": f"{first['name']}: {first['reason']}",
+                "events": alert_events,
             })
         else:
-            alerts.append({
+            triaged.append({
                 "status": "open",
-                "context": build_context(record, all_records),
-                "record": record,
+                "context": build_context(alert_events, all_records),
+                "events": alert_events,
             })
-    return alerts
+    return triaged

@@ -1,0 +1,54 @@
+title: Entra ID Successful User Sign-In
+name: entra_successful_user_signin
+id: d44aefb1-5669-4377-bb62-2150b0afd019
+status: experimental
+description: Base rule. A successful sign-in by a user (not a service principal).
+author: identity-to-data-lab
+date: 2026-10-21
+logsource:
+  product: azure
+  service: signinlogs
+detection:
+  selection:
+    ResultType: '0'
+  filter_no_user:
+    UserPrincipalName: null
+  condition: selection and not filter_no_user
+level: informational
+---
+title: Entra ID User Session Active From Multiple IPs Within One Hour
+id: 23cb27e8-e909-4bd8-9cc6-be3a40d5a612
+status: experimental
+description: >
+  Detects one user signing in successfully from more than one IP address within an hour.
+  After an adversary-in-the-middle (AiTM) phish, the attacker replays the stolen session
+  cookie from their own browser. MFA was already satisfied by the stolen session, so the
+  replay looks like a normal sign-in, except that it arrives from a second IP while the
+  original session is still in use. Pair with the investigation context from
+  harness/enrich.py (new IP / ASN / country for the user) when triaging.
+references:
+  - https://www.microsoft.com/en-us/security/blog/2022/07/12/from-cookie-theft-to-bec-attackers-use-aitm-phishing-sites-as-entry-point-to-further-financial-fraud/
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1185/azure_ad_concurrent_sessions_from_different_ips
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.defense_evasion
+  - attack.lateral_movement
+  - attack.t1550.004
+  - attack.t1078.004
+correlation:
+  type: value_count
+  rules:
+    - entra_successful_user_signin
+  group-by:
+    - UserPrincipalName
+  timespan: 1h
+  condition:
+    field: IPAddress
+    gt: 1
+falsepositives:
+  - Users moving between networks (office Wi-Fi to phone hotspot, VPN connect / disconnect)
+  - IPv4 and IPv6 addresses of the same device both appearing
+  - Tune with known-benign entries for corporate egress and VPN ranges; production
+    versions often compare ASN or country instead of raw IP to cut roaming noise
+level: medium

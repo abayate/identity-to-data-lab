@@ -1,0 +1,31 @@
+title: Entra ID User Consent Granted to an Application
+id: b47692fd-13ac-4faf-8094-4f8d71f3b6ad
+status: experimental
+description: >
+  Detects a successful "Consent to application" audit event: a user approved an
+  application's request for delegated permissions. In a consent-phishing (illicit
+  consent grant) attack, the victim is tricked into approving an attacker-controlled
+  multi-tenant app, which then reads the victim's mail and files with tokens the
+  attacker holds. No password is stolen, so a password reset does not evict the attacker.
+references:
+  - https://learn.microsoft.com/en-us/defender-office-365/detect-and-remediate-illicit-consent-grants
+  - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1528/azure_ad_user_consent_granted
+author: identity-to-data-lab
+date: 2026-10-21
+tags:
+  - attack.credential_access
+  - attack.persistence
+  - attack.t1528
+logsource:
+  product: azure
+  service: auditlogs
+detection:
+  selection:
+    OperationName: Consent to application
+    Result: success
+  condition: selection
+falsepositives:
+  - Users approving legitimate third-party apps (scheduling, e-signature, CRM add-ins)
+  - Reduce by restricting user consent to verified publishers and low-risk permissions;
+    then every remaining consent is worth a look
+level: medium

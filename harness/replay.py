@@ -30,7 +30,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from harness.coverage import build_coverage, coverage_markdown, coverage_svg, techniques_in_rule  # noqa: E402
 from harness.enrich import load_known_benign, triage  # noqa: E402
-from harness.evaluate import find_hits, load_rules  # noqa: E402
+from harness.evaluate import alert_is_true_positive, find_alerts, load_rules  # noqa: E402
 
 # A rule's `logsource: service:` decides which log files it runs against.
 # Log files are named <prefix>*.jsonl in data/sample-logs/.
@@ -81,30 +81,34 @@ def regenerate_simulations():
 
 
 def evaluate_all(rules, logs, known_benign):
-    """Run every rule, score it, and triage its hits. Returns one result dict per rule."""
+    """Run every rule, score its alerts, and triage them. Returns one result dict per rule.
+
+    Scoring is per ALERT (see evaluate.score_rule): an alert is a true positive if it
+    contains any malicious event, and a false positive if every event in it is benign.
+    """
     results = []
     for rule in rules:
         records = records_for_rule(rule, logs)
-        hits = find_hits(rule, records)
-        alerts = triage(rule, hits, records, known_benign)
+        alerts = find_alerts(rule, records)
+        triaged = triage(rule, alerts, records, known_benign)
         benign_total = sum(1 for r in records if r.get("lab_label") == "benign")
-        false_positives = sum(1 for r in hits if r.get("lab_label") == "benign")
+        false_positives = sum(1 for alert in alerts if not alert_is_true_positive(alert))
         open_false_positives = sum(
-            1 for a in alerts if a["status"] == "open" and a["record"].get("lab_label") == "benign"
+            1 for t in triaged if t["status"] == "open" and not alert_is_true_positive(t["events"])
         )
         results.append({
             "rule": rule.get("title", rule["_path"]),
             "path": rule["_path"],
             "techniques": techniques_in_rule(rule),
             "events_checked": len(records),
-            "hits": len(hits),
-            "true_positives": sum(1 for r in hits if r.get("lab_label") == "malicious"),
+            "hits": len(alerts),
+            "true_positives": len(alerts) - false_positives,
             "false_positives": false_positives,
-            "auto_closed": sum(1 for a in alerts if a["status"] == "auto_closed"),
+            "auto_closed": sum(1 for t in triaged if t["status"] == "auto_closed"),
             "fp_rate": false_positives / benign_total if benign_total else 0.0,
             "fp_rate_after_triage": open_false_positives / benign_total if benign_total else 0.0,
-            "caught_ids": {id(a["record"]) for a in alerts if a["record"].get("lab_label") == "malicious"},
-            "open_alerts": [a for a in alerts if a["status"] == "open"],
+            "caught_ids": {id(e) for alert in alerts for e in alert if e.get("lab_label") == "malicious"},
+            "open_alerts": [t for t in triaged if t["status"] == "open"],
         })
     return results
 

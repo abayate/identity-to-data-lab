@@ -136,3 +136,90 @@ def test_score_rule(toy_rule):
     assert score["true_positives"] == 1
     assert score["false_positives"] == 1
     assert score["fp_rate"] == 0.25
+
+
+# --- Correlation rules (two YAML documents in one file) ---
+
+CORRELATION_YAML = """
+title: Base - successful sign-in
+name: toy_successful_signin
+logsource:
+  product: azure
+  service: signinlogs
+detection:
+  selection:
+    ResultType: '0'
+  condition: selection
+---
+title: Toy correlation - user from more than one IP within 1 hour
+correlation:
+  type: value_count
+  rules:
+    - toy_successful_signin
+  group-by:
+    - UserPrincipalName
+  timespan: 1h
+  condition:
+    field: IPAddress
+    gt: 1
+"""
+
+
+def signin(user, ip, time, label="benign", result="0"):
+    return {"UserPrincipalName": user, "IPAddress": ip, "TimeGenerated": time,
+            "ResultType": result, "lab_label": label}
+
+
+@pytest.fixture
+def correlation_rule(tmp_path):
+    path = tmp_path / "corr.yml"
+    path.write_text(CORRELATION_YAML, encoding="utf-8")
+    return load_rule(path)
+
+
+def test_correlation_file_merges_base_rule(correlation_rule):
+    assert correlation_rule["title"].startswith("Toy correlation")
+    assert correlation_rule["logsource"]["service"] == "signinlogs"
+    assert correlation_rule["detection"]["selection"] == {"ResultType": "0"}
+
+
+def test_value_count_alerts_once_per_group(correlation_rule):
+    from harness.evaluate import find_alerts
+    records = [
+        signin("alice", "1.1.1.1", "2026-01-01T10:00:00Z"),
+        signin("alice", "2.2.2.2", "2026-01-01T10:30:00Z", label="malicious"),
+        signin("bob", "3.3.3.3", "2026-01-01T10:00:00Z"),
+        signin("bob", "3.3.3.3", "2026-01-01T10:10:00Z"),            # same IP: no alert
+        signin("carol", "4.4.4.4", "2026-01-01T10:00:00Z"),
+        signin("carol", "5.5.5.5", "2026-01-01T12:00:00Z"),          # 2h apart: no alert
+        signin("dave", "6.6.6.6", "2026-01-01T10:00:00Z"),
+        signin("dave", "7.7.7.7", "2026-01-01T10:05:00Z", result="50126"),  # failed: not counted
+    ]
+    alerts = find_alerts(correlation_rule, records)
+    assert len(alerts) == 1
+    assert {e["IPAddress"] for e in alerts[0]} == {"1.1.1.1", "2.2.2.2"}
+
+
+def test_correlation_alert_scoring(correlation_rule):
+    records = [
+        signin("alice", "1.1.1.1", "2026-01-01T10:00:00Z"),
+        signin("alice", "2.2.2.2", "2026-01-01T10:30:00Z", label="malicious"),
+        signin("erin", "8.8.8.8", "2026-01-01T09:00:00Z"),
+        signin("erin", "9.9.9.9", "2026-01-01T09:20:00Z"),           # benign traveller
+    ]
+    score = score_rule(correlation_rule, records)
+    assert score["hits"] == 2
+    assert score["true_positives"] == 1    # alice's alert holds a malicious event
+    assert score["false_positives"] == 1   # erin's alert is all benign
+
+
+@pytest.mark.parametrize("text, seconds", [("30s", 30), ("15m", 900), ("1h", 3600), ("2d", 172800)])
+def test_parse_timespan(text, seconds):
+    from harness.evaluate import parse_timespan
+    assert parse_timespan(text) == seconds
+
+
+def test_parse_timespan_rejects_garbage():
+    from harness.evaluate import parse_timespan
+    with pytest.raises(ValueError):
+        parse_timespan("an hour")

@@ -136,7 +136,7 @@ def test_rule_ignores_other_log_types(toy_lab):
 def test_enrich_context_flags_new_ip():
     rule = {"title": "any"}
     hit = TOY_EVENTS[1]  # alice from a network she has not used before
-    alerts = enrich.triage(rule, [hit], TOY_EVENTS, entries=[])
+    alerts = enrich.triage(rule, [[hit]], TOY_EVENTS, entries=[])
     assert alerts[0]["status"] == "open"
     assert alerts[0]["context"]["user"] == "alice@contoso.example"
     assert alerts[0]["context"]["new_IPAddress_for_user"] is True
