@@ -27,7 +27,7 @@ employer's environment.
    install the Microsoft 365 solution → connect it with SharePoint/OneDrive enabled.
    File events land in `OfficeActivity`.
 4. **Check the field names line up.** Run `SigninLogs | take 10` and compare the
-   columns with `simulations/entra_aitm/schema.py`. The synthetic logs copy these
+   columns with `simulations/schemas.py`. The sample logs copy these
    names, so the KQL in `03-detections.md` should run unchanged. Note any differences
    here. `AutonomousSystemNumber` appears in `SigninLogs` as `AutonomousSystemNumber`
    on current schemas; if not present in yours, derive it from `IPAddress` with a

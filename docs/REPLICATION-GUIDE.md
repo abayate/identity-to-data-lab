@@ -1,357 +1,270 @@
 # Replication Guide: Identity-to-Data Detection Lab
 
-This is the step-by-step record of how this project was built, written so you can
-rebuild it from an empty folder later, or pick it up where it stopped. It's a
-Markdown file (plain text with light formatting). It reads fine in Notepad, and on
-GitHub it renders with tables and headings.
+The step-by-step record of how this project was built, so you can rebuild it from an
+empty folder, extend it, or explain every step in an interview.
 
-"What you should see" blocks are the real terminal output captured while building.
-They're your screenshots: if your output matches, the step worked.
+The "What you should see" blocks are **real output captured while building**, so treat
+them as your screenshots: if your output matches, the step worked.
 
 ---
 
-## 0. Where the project stands right now
+## 0. Where the project stands
 
-| Piece | Status | Where |
+| Phase | What | Status |
 |---|---|---|
-| Repo scaffold, CI, doc skeletons | Built, committed | Phase 0 |
-| Sign-in log schema (field list) | Built | `simulations/entra_aitm/schema.py` |
-| Sample-log validator tests | Built (skip until logs exist) | `tests/test_sample_logs.py` |
-| Sigma rule engine (matcher + scoring) | Built, tested | `harness/evaluate.py` |
-| Auto-triage (FP auto-close + context) | Built, tested | `harness/enrich.py`, `harness/known_benign.yml` |
-| ATT&CK coverage map (markdown + SVG) | Built, tested | `harness/coverage.py` |
-| Replay runner + report files + CI summary | Built, tested | `harness/replay.py`, `reports/` |
-| Threat-model write-up | **Not built: your step** | `docs/02-threat-model.md` |
-| Attack + benign log generator | **Not built: your step** | `simulations/entra_aitm/generate.py` |
-| Entra / data / AWS detection rules | **Not built: needs the logs above first** | `detections/` |
-| Stratus Red Team AWS module | **Not built: you run it against your own AWS account** | `simulations/aws_keyleak/` |
-| Runbooks, go-live doc, README | **Not built: Phase 6, written last** | `docs/`, `README.md` |
+| 0 | Repo scaffold, CI, doc skeletons | ✅ Done |
+| 1 | Labeled sample logs from public attack datasets | ✅ Done: 1,611 malicious + 59 benign events |
+| 2 | Entra identity detections (3 rules) | ✅ Done |
+| 3 | Data-layer detections (4 rules), identity → data correlation | ✅ Done |
+| 4 | AWS CloudTrail detections (6 rules), GuardDuty comparison | ✅ Done |
+| 5 | Replay harness, auto-triage, alert queue, ATT&CK map, CI summary | ✅ Done |
+| 6 | README, docs | ✅ README, architecture, detections, go-live. **Open:** runbooks (`04-runbooks.md`) and threat model (`02-threat-model.md`), written by you |
+| 7 | Upstream PR to SigmaHQ | **Open:** needs your GitHub account |
 
-**Why the attack-side pieces are left to you:** the tooling (the engine, triage,
-coverage and reporting) is finished and tested. The generator that produces the
-attack-side telemetry, and the threat-model write-up that goes with it, are the
-parts I didn't write. Section 7 shows exactly how to build them so they plug in.
-
-Current test result: **66 passed, 2 skipped** (the 2 skipped are waiting for sample logs).
+Current result: **198 tests pass**, and 1,563 of 1,611 malicious events (97%) are caught by at least one rule.
 
 ---
 
-## 1. Prerequisites (one-time setup)
+## 1. Prerequisites (one-time)
 
-1. **Python 3.11 or newer.** Check with `python --version`. (Built with 3.14 locally;
-   CI uses 3.12. Both work.)
-2. **Git.** Check with `git --version`.
-3. **A GitHub account** (for CI and showing the project).
-4. A terminal. On Windows, PowerShell or Git Bash both work.
+1. **Python 3.11+**: `python --version` (built with 3.14 locally; CI uses 3.12).
+2. **Git**: `git --version`.
+3. **GitHub CLI** (optional, for creating the repo from the terminal): `gh --version`, then `gh auth login`.
+4. A terminal: PowerShell, Git Bash, or macOS / Linux shell.
 
 ---
 
-## 2. Rebuild from scratch: Phase 0, the scaffold
+## 2. Run the finished project (5 minutes)
 
-### Step 2.1: Create the folders
-
-```
-identity-to-data-lab/
-  .github/workflows/   docs/   detections/entra/   detections/data/   detections/aws/
-  simulations/entra_aitm/   simulations/data_exfil/   simulations/aws_keyleak/
-  data/sample-logs/   harness/   tests/
-```
-
-Empty folders aren't tracked by git, so put an empty `.gitkeep` file in each one
-that has nothing else yet.
-
-### Step 2.2: Create the config files
-
-- `requirements.txt`, two lines: `pyyaml>=6.0` and `pytest>=8.0`
-- `pyproject.toml`:
-  ```toml
-  [tool.pytest.ini_options]
-  pythonpath = ["."]      # lets tests do `import harness` from the repo root
-  testpaths = ["tests"]
-  ```
-- `.gitignore`: `__pycache__/`, `*.py[cod]`, `.venv/`, `.pytest_cache/`, `.env`, `*.log`
-- `.github/workflows/ci.yml`: see the file in this repo. It checks out the code,
-  installs Python 3.12, runs `pip install -r requirements.txt`, `pytest -v`, then
-  `python harness/replay.py`.
-
-### Step 2.3: Make a virtual environment and install dependencies
-
-```
+```bash
+git clone https://github.com/abayate/identity-to-data-lab.git
+cd identity-to-data-lab
 python -m venv .venv
-.venv\Scripts\activate          # Windows PowerShell
-source .venv/Scripts/activate   # Git Bash on Windows
-source .venv/bin/activate       # Mac / Linux
+.venv\Scripts\activate             # Windows PowerShell
+# source .venv/Scripts/activate    # Git Bash on Windows
+# source .venv/bin/activate        # macOS / Linux
 pip install -r requirements.txt
+pytest -q
 ```
 
-### Step 2.4: Git init and first commit
-
+**What you should see:**
 ```
-git init
-git add -A
-git commit -m "Phase 0: scaffold repo structure, CI stub, doc skeletons"
+198 passed in 2.27s
 ```
 
-**Gotcha we hit:** `pytest` with zero tests exits with code 5, which CI treats as a
-failure. The fix was a real smoke test (`tests/test_harness.py`) that checks every
-folder exists and every harness module has a docstring.
-
----
-
-## 3. Phase 1 groundwork: the log schema and validator
-
-### Step 3.1: Define the schema
-
-`simulations/entra_aitm/schema.py` holds `REQUIRED_FIELDS`, a dict of field name to
-Python type. The field names copy Microsoft's real `SigninLogs` table
-(`UserPrincipalName`, `IPAddress`, `AutonomousSystemNumber`, `AuthenticationRequirement`,
-`IncomingTokenType`, `SessionId`, ...), so rules transfer to a real tenant later.
-
-Two lab-only fields are the **answer key**:
-- `lab_label`: `"benign"` or `"malicious"`
-- `lab_scenario`: which story produced the event (e.g. `"normal_workday"`)
-
-Rules must never read `lab_` fields, or the rules would be cheating.
-
-Add empty `__init__.py` files (with a one-line docstring) in `simulations/` and
-`simulations/entra_aitm/` so the tests can import the schema.
-
-### Step 3.2: Validator tests
-
-`tests/test_sample_logs.py` reads every `data/sample-logs/entra_signins*.jsonl`
-file and checks each line is JSON, has every field with the right type, has a
-valid label and an ISO 8601 timestamp, and that both labels appear somewhere.
-
-The file also tests its **own checker** with known-bad records. Otherwise a buggy
-checker could pass everything silently.
-
-**Log format: JSON Lines.** One event per line, for example:
-```
-{"TimeGenerated": "2026-10-01T14:03:22Z", "UserPrincipalName": "alice@contoso.example", ...}
-{"TimeGenerated": "2026-10-01T14:05:10Z", "UserPrincipalName": "bob@contoso.example", ...}
-```
-
----
-
-## 4. The Sigma rule engine (`harness/evaluate.py`)
-
-A ~200-line matcher that evaluates a Sigma rule's `detection:` block directly
-against each log record. No SIEM needed.
-
-Supports:
-- Selections: fields in one map are AND, a list of values is OR, a list of maps is OR
-- Modifiers: `contains`, `startswith`, `endswith`, `re`, `gt`, `gte`, `lt`, `lte`, `all`
-- Nested fields with dots (`userIdentity.type`), needed for CloudTrail
-- `null` meaning "field missing or empty"
-- Conditions: `and`, `or`, `not`, parentheses, `1 of name*`, `all of name*`
-- Case-insensitive string matching (per the Sigma spec)
-
-Key functions: `load_rule`, `load_rules`, `rule_matches`, `find_hits`, `score_rule`.
-
-Tests: `tests/test_evaluate.py` covers each feature separately with toy rules.
-
----
-
-## 5. Triage, coverage and replay (`harness/enrich.py`, `coverage.py`, `replay.py`)
-
-### enrich.py: auto-triage
-- `harness/known_benign.yml` is a list of expected, harmless patterns. **Each entry
-  needs a written `reason`** (the loader refuses entries without one). Entries use
-  Sigma selection syntax and can be limited to specific rules with `rules:`.
-- A hit matching an entry becomes `auto_closed`. Every other hit becomes `open` with
-  context: how many other events the user has, and whether this IP / ASN / country
-  is **new for that user**.
-
-### coverage.py: ATT&CK map
-- Reads `attack.tXXXX` tags from each rule.
-- Compares them with `PLANNED_TECHNIQUES`, the techniques this chain should cover.
-- Statuses: **tested** (a rule caught real attack events), **untested** (a rule
-  exists but caught nothing), **gap** (no rule).
-- Writes a markdown table and an SVG picture.
-
-### replay.py: the runner
-- Loads all logs and all rules, runs each rule only against its own log type
-  (`logsource: service:` → file prefix, e.g. `signinlogs` → `entra_signins*.jsonl`),
-  scores, triages, and writes `reports/results.md`, `results.json`, `coverage.md`, `coverage.svg`.
-- `--regenerate` first re-runs every `simulations/*/generate.py`.
-- In GitHub Actions it also writes the tables to the run's **Summary** page.
-
-### Step 5.1: Run it
-
-```
+```bash
 python harness/replay.py
 ```
 
-**What you should see right now (no rules or logs yet):**
+**What you should see (first lines):**
 ```
-Loaded 0 log events and 0 rules.
+Loaded 1670 log events and 13 rules.
 
 | Rule | Events | Hits | TP | FP | Auto-closed | FP rate | FP rate after triage |
 |---|---|---|---|---|---|---|---|
-| (no rules in detections/ yet) | - | - | - | - | - | - | - |
+| AWS Burst of Access-Denied API Calls by One Identity | 1333 | 2 | 2 | 0 | 0 | 0.0% | 0.0% |
+| AWS Access Key Created for a Different IAM User | 1333 | 56 | 28 | 28 | 23 | 73.7% | 13.2% |
+| AWS EBS Snapshot Shared With Another Account or Made Public | 1333 | 6 | 6 | 0 | 0 | 0.0% | 0.0% |
+| AWS IAM Policy Version Set as Default With Wildcard Actions | 1333 | 3 | 3 | 0 | 0 | 0.0% | 0.0% |
+| AWS IAM Role Created Trusting Any Principal or a Whole Account | 1333 | 2 | 2 | 0 | 0 | 0.0% | 0.0% |
+| AWS S3 Mass Object Download by One Identity | 1333 | 1 | 1 | 0 | 0 | 0.0% | 0.0% |
+| Data Access Within One Hour of a Multi-IP Entra Session | 332 | 1 | 1 | 0 | 0 | 0.0% | 0.0% |
+| M365 Mass File Access or Download by One User | 289 | 4 | 4 | 0 | 0 | 0.0% | 0.0% |
+| M365 File Download With Rclone User Agent | 289 | 58 | 58 | 0 | 0 | 0.0% | 0.0% |
+| M365 Search for Credential or Payroll Terms | 289 | 12 | 12 | 0 | 0 | 0.0% | 0.0% |
+| Entra ID Sign-In Using Device Code Flow | 43 | 1 | 1 | 0 | 0 | 0.0% | 0.0% |
+| Entra ID User Consent Granted to an Application | 5 | 1 | 1 | 0 | 0 | 0.0% | 0.0% |
+| Entra ID User Session Active From Multiple IPs Within One Hour | 43 | 3 | 3 | 0 | 0 | 0.0% | 0.0% |
 
-**Malicious events caught by at least one rule:** 0 / 0
-
-| Branch | Technique | Name | Status | Rules |
-|---|---|---|---|---|
-| Identity | T1566 | Phishing | gap | - |
-| Identity | T1528 | Steal Application Access Token | gap | - |
-| Identity | T1539 | Steal Web Session Cookie | gap | - |
-| Identity | T1078.004 | Valid Accounts: Cloud Accounts | gap | - |
-| Data | T1530 | Data from Cloud Storage | gap | - |
-| AWS | T1552.001 | Unsecured Credentials: Credentials In Files | gap | - |
-| AWS | T1098.003 | Account Manipulation: Additional Cloud Roles | gap | - |
-| AWS | T1537 | Transfer Data to Cloud Account | gap | - |
-
-Reports written to ...\reports
+**Malicious events caught by at least one rule:** 1563 / 1611
 ```
 
-### Step 5.2: Proof it works, on toy data
-
-The test suite builds a tiny lab in a temp folder: one toy rule, four events (one
-malicious, one benign scanner that trips the rule, two normal), and one
-known-benign entry for the scanner. Running replay on it gave:
-
-```
-Loaded 4 log events and 1 rules.
-
-| Rule | Events | Hits | TP | FP | Auto-closed | FP rate | FP rate after triage |
-|---|---|---|---|---|---|---|---|
-| Toy rule - sign-in from test network | 4 | 2 | 1 | 1 | 1 | 33.3% | 0.0% |
-
-**Malicious events caught by at least one rule:** 1 / 1
-```
-
-Read it like this: the rule fired twice. One hit was the attack (TP). One was the
-scanner (FP), which the known-benign list auto-closed, so the FP rate an analyst
-actually sees dropped from 33.3% to 0%. **That before/after number is the headline
-result for interviews.**
-
-The coverage map it drew (T1078.004 shows as tested):
-
-![example coverage map](images/example-coverage-toy-rule.svg)
-
-### Step 5.3: Run the tests
-
-```
-pytest -v
-```
-
-**What you should see (end of output):**
-```
-66 passed, 2 skipped
-```
+Then open `reports/`: `results.md` (this table), `alerts.md` (the analyst queue),
+`coverage.md` and `coverage.svg` (the ATT&CK map).
 
 ---
 
-## 6. How to see the results (for you, GitHub, and your resume)
+## 3. Rebuild it from scratch, phase by phase
 
-| Where | How | Who it's for |
-|---|---|---|
-| Terminal | `pytest -v` and `python harness/replay.py` | You, while building |
-| `reports/` folder | Committed files; GitHub renders `results.md` and `coverage.svg` in the browser | Anyone browsing the repo |
-| GitHub Actions | Repo → **Actions** tab → click a run → **Summary** shows the replay tables | Proof it runs automatically |
-| README (Phase 6) | Pitch, diagram, coverage map, results table, CI badge | Recruiters |
+### Phase 0: scaffold
 
-### Putting it on GitHub (not done yet: there's no remote)
+1. Create the folders: `detections/{entra,data,aws}`, `simulations/{public_datasets,aws_keyleak,entra_aitm,data_exfil}`,
+   `data/{raw,sample-logs}`, `harness/`, `tests/`, `docs/`, `.github/workflows/`.
+2. `requirements.txt`: `pyyaml>=6.0` and `pytest>=8.0`. Those are the only dependencies.
+3. `pyproject.toml`: `[tool.pytest.ini_options]` with `pythonpath = ["."]` (so tests can
+   `import harness`) and `testpaths = ["tests"]`.
+4. `.gitignore`: `__pycache__/`, `.venv/`, `.pytest_cache/`, `.env`, `*.log`, **plus**
+   `!data/raw/**/*.log` (the raw datasets are `.log` files and must be committed).
+5. `.gitattributes`: `data/sample-logs/** text eol=lf` and `data/raw/** -text`, so generated
+   logs are byte-identical on Windows and Linux.
+6. `.github/workflows/ci.yml`: checkout, Python 3.12, `pip install -r requirements.txt`,
+   `pytest -v`, `python harness/replay.py`.
+7. A smoke test in `tests/test_harness.py`. An empty pytest run exits with code 5, which CI treats as a failure.
 
-1. On github.com: **New repository** → name `identity-to-data-lab` → don't add a README.
-2. In the project folder:
+### Phase 1: real attack data, labeled
+
+**Idea:** instead of inventing attack logs, use Splunk's
+[attack_data](https://github.com/splunk/attack_data) (Apache-2.0). It holds real
+telemetry captured while their team ran Evilginx, TokenTactics, rclone, Atomic Red Team,
+Stratus Red Team and more in test tenants.
+
+1. **Pick datasets.** Browse `datasets/attack_techniques/<TECHNIQUE>/` and read each
+   dataset's `.yml` description. This lab uses 12 (see `simulations/public_datasets/sources.yml`).
+2. **Write `sources.yml`.** For each dataset: `name`, `technique`, `scenario`, `path`,
+   `metadata`, `format` (`azure_monitor`, `o365_management`, `mixed`, or `cloudtrail`), and labeling:
+   - `default_label`: what an event is unless a rule below says otherwise
+   - `malicious_when` / `benign_when` / `exclude_when`: Sigma-style selections on the **raw** event
+   - `evidence`: a paragraph citing the dataset's description
+   
+   **Golden rule:** label from *who / where* the attack came from (attacker IP, attacker
+   account, documented test user), **never** from the fields your rules will test.
+3. **`fetch.py`** downloads each file. The repo uses Git LFS, so download from
+   `media.githubusercontent.com` (real file), not `raw.githubusercontent.com` (pointer stub).
+4. **`generate.py`** labels each event and converts it:
+   - Azure Monitor sign-ins: flatten `properties.ipAddress` → `IPAddress` and so on (Sentinel's `SigninLogs` columns)
+   - Azure audit: map to `AuditLogs` columns
+   - M365 and CloudTrail: keep native field names, add `TimeGenerated`
+   - write `data/sample-logs/<type>_<dataset>.jsonl` + a README of counts
+5. **`schemas.py` + `tests/test_sample_logs.py`:** required vs optional fields per log type.
+
+```bash
+python -m simulations.public_datasets.fetch      # once; needs internet
+python -m simulations.public_datasets.generate   # any time; offline
+```
+
+**What you should see (generate):**
+```
+aitm_session_cookie_replay: 22 malicious, 0 benign, 0 excluded, 0 unreadable
+aitm_session_cookie_replay_m365: 9 malicious, 0 benign, 0 excluded, 0 unreadable
+device_code_phishing: 4 malicious, 8 benign, 4 excluded, 0 unreadable
+oauth_consent_grant: 9 malicious, 1 benign, 0 excluded, 0 unreadable
+sharepoint_mass_download: 233 malicious, 12 benign, 0 excluded, 1 unreadable
+sharepoint_sensitive_search: 39 malicious, 0 benign, 0 excluded, 0 unreadable
+aws_leaked_key_discovery: 1150 malicious, 0 benign, 0 excluded, 0 unreadable
+aws_create_access_key_for_other_user: 31 malicious, 38 benign, 6 excluded, 0 unreadable
+aws_policy_version_privesc: 3 malicious, 0 benign, 0 excluded, 0 unreadable
+aws_role_external_trust: 2 malicious, 0 benign, 0 excluded, 0 unreadable
+aws_s3_mass_getobject: 100 malicious, 0 benign, 0 excluded, 0 unreadable
+aws_ebs_snapshot_share: 9 malicious, 0 benign, 0 excluded, 0 unreadable
+```
+
+### Phases 2–4: detection rules
+
+Every rule follows the same loop. **Use it to add your own.**
+
+1. **Look at the data first.** Print the malicious and benign events side by side and find
+   a field difference that makes sense to a defender (not one that just happens to differ).
+2. **Write the Sigma file** in `detections/<area>/`:
+   ```yaml
+   title: <what it detects>
+   id: <python -c "import uuid; print(uuid.uuid4())">
+   status: experimental
+   description: <why this behavior means attack>
+   references: [<docs>, <dataset link>]
+   author: identity-to-data-lab
+   date: 2026-10-21
+   tags: [attack.<tactic>, attack.tXXXX]
+   logsource: {product: <azure|m365|aws>, service: <signinlogs|auditlogs|m365|cloudtrail>}
+   detection:
+     selection:
+       FieldName: value
+     condition: selection
+   falsepositives: [<what legit activity trips it, and how to tune>]
+   level: medium
    ```
-   git remote add origin https://github.com/<your-username>/identity-to-data-lab.git
-   git push -u origin main
-   ```
-3. Open the **Actions** tab and watch the first run go green.
-4. Add the badge to the README later:
-   `![CI](https://github.com/<your-username>/identity-to-data-lab/actions/workflows/ci.yml/badge.svg)`
+   For counting or "same user, multiple X" logic, add a second YAML document with a
+   `correlation:` block (see `detections/entra/entra_user_signin_multiple_ips.yml`). For
+   "A and B happened to the same user", use `type: temporal` with `aliases`
+   (see `detections/data/identity_to_data_access_after_multi_ip_session.yml`).
+3. **Register the expectation** in `tests/test_detections.py` → `EXPECTED_SCENARIOS`
+   (which `lab_scenario` the rule must catch). The rule itself never knows.
+4. **Document it** in `docs/03-detections.md` under `### <exact rule title>` with a
+   ` ```kql ` block. A test fails without it.
+5. **Run** `pytest -q`, then `python harness/replay.py`.
+6. **If it's noisy:** look at *who* the false positives are. If they're an approved,
+   documented workflow, add an entry to `harness/known_benign.yml` **with a reason**.
+   Never loosen the rule just to make a number look better. If some FPs must stay open,
+   record the allowance in `ALLOWED_OPEN_FALSE_POSITIVES` with a comment.
+
+### Phase 5: harness
+
+| File | Job |
+|---|---|
+| `harness/evaluate.py` | Sigma matcher: selections, modifiers (`contains`, `re`, `fieldref`…), conditions, correlations (`event_count`, `value_count`, `temporal`), aliases, lists inside events |
+| `harness/enrich.py` | Auto-close alerts matching `known_benign.yml`; attach "new IP / ASN / country for this user" context |
+| `harness/coverage.py` | ATT&CK map: tested / untested / gap |
+| `harness/replay.py` | Run everything, write `reports/`, post to the GitHub Actions summary |
+
+### Phase 6: docs
+
+README (front page), `01-architecture.md`, `03-detections.md`, `05-go-live.md`,
+`interview-prep.md`, and this guide. Still to write: `04-runbooks.md` and `02-threat-model.md` (section 6).
 
 ---
 
-## 7. What's left, and exactly how to do it
+## 4. See the results
 
-### 7.1 Threat model (`docs/02-threat-model.md`)
-Fill in the existing headings in your own words: for each chain step, the ATT&CK ID
-(they're listed in `harness/coverage.py`), what the attacker achieves, and **which
-log fields would show it**. Writing this yourself is the best interview prep there
-is. MITRE's pages (attack.mitre.org) and Microsoft's Entra sign-in log docs are the
-sources to cite.
-
-### 7.2 Sign-in log generator (`simulations/entra_aitm/generate.py`)
-Requirements it must meet so everything else plugs in:
-- Writes `data/sample-logs/entra_signins.jsonl`, one JSON object per line.
-- Every record has every field in `REQUIRED_FIELDS` (import it from `schema.py`).
-- Uses `random.seed(<fixed number>)` so output is identical on every run.
-- Uses only documentation IP ranges (`192.0.2.x`, `198.51.100.x`, `203.0.113.x`),
-  private ASNs (64512–65534), and a fake domain (`contoso.example`). No real data.
-- Produces mostly benign events (normal users, normal times, known devices) plus a
-  small, labeled set of malicious ones. Every event gets `lab_label` and `lab_scenario`.
-- Runnable as `python -m simulations.entra_aitm.generate`, so `replay.py --regenerate` finds it.
-
-When it's done: `pytest` should show **0 skipped** (the sample-log tests run), and
-they must pass.
-
-### 7.3 Detection rules (`detections/entra/*.yml`)
-Skeleton every rule follows:
-```yaml
-title: <what it detects>
-id: <a UUID: python -c "import uuid; print(uuid.uuid4())">
-status: experimental
-description: <one or two sentences>
-logsource:
-  product: azure
-  service: signinlogs          # must match SERVICE_TO_FILE_PREFIX in replay.py
-tags:
-  - attack.<tactic_name>
-  - attack.tXXXX.XXX           # drives the coverage map
-detection:
-  selection:
-    FieldName: value
-  condition: selection
-falsepositives:
-  - <what legit activity could trip it>
-level: medium
-```
-For each rule, add tests in `tests/test_detections.py`: it fires on its malicious
-events and stays silent on benign ones. Use `find_hits` / `score_rule` from
-`harness/evaluate.py`. Then add the KQL equivalent and a writeup in `docs/03-detections.md`.
-
-### 7.4 Phases 3, 4, 6, 7
-Follow `CLAUDE.md` section 5. Notes:
-- Data-layer logs go in `data/sample-logs/m365_audit*.jsonl` (`service: m365`).
-- CloudTrail logs go in `data/sample-logs/cloudtrail*.jsonl` (`service: cloudtrail`).
-  Generate them with Stratus Red Team (github.com/DataDog/stratus-red-team) in **your
-  own throwaway AWS account**, then label each event and commit it.
-- If a new log type needs a new prefix, add it to `SERVICE_TO_FILE_PREFIX` in `replay.py`.
+| Where | How |
+|---|---|
+| Terminal | `pytest -v`, `python harness/replay.py` |
+| `reports/` | `results.md`, `alerts.md`, `coverage.md`, `coverage.svg` (committed; GitHub renders them) |
+| GitHub Actions | Repo → **Actions** → a run → **Summary** shows the replay and coverage tables |
+| README | Badges, coverage map, results, interactive diagrams and expandable sections |
 
 ---
 
-## 8. Feedback and lessons learned (things that bit us)
+## 5. Problems hit while building, and the fixes
 
-1. **Empty test suites fail CI.** pytest exit code 5. Fix: write a real smoke test, not a flag.
-2. **CRLF warnings on Windows** ("LF will be replaced by CRLF") are harmless; CI runs on Linux.
-3. **Test your tests.** The validator and the matcher both have tests that feed them
-   known-bad input. A checker that accepts everything is worse than no checker.
-4. **Run rules only on their own log type.** Without the `logsource` → file mapping,
-   a sign-in rule could "fire" on a CloudTrail event that happens to share a field
-   name. There's a test for this (`test_rule_ignores_other_log_types`).
-5. **Don't count per-rule false negatives.** Each rule covers one step, so whole-chain
-   coverage is measured across all rules ("caught by at least one rule").
-6. **Every auto-close needs a reason.** The loader enforces it. In a real SOC, an
-   unexplained suppression is how a real attack gets dismissed.
-7. **Answer-key fields are prefixed `lab_`** so a rule that cheats is obvious in review.
-8. **Fixed random seeds** keep generated logs identical across runs, so test results
-   don't flicker.
+1. **Empty pytest suite fails CI** (exit code 5). Fix: a real smoke test.
+2. **CRLF warnings on Windows** are harmless, but generated files must be LF. Fix:
+   `.gitattributes` + `newline="\n"` when writing.
+3. **`*.log` in `.gitignore` hid the raw datasets.** Fix: `!data/raw/**/*.log`.
+4. **Git LFS pointer stubs** instead of data. Fix: download from `media.githubusercontent.com`;
+   `fetch.py` refuses to save a stub.
+5. **Real data broke the schema:** service-principal sign-ins have no user, timestamps came
+   in three formats (one with 7 fractional digits), and one published line was truncated.
+   Fix: required vs optional fields, a timestamp normalizer, skip-and-count bad lines.
+6. **Each file mixes attack and normal activity.** Fix: per-event labels with evidence, and
+   *exclude* events that can't be attributed instead of guessing.
+7. **A test was wrong, not the rule:** "54 minutes later" is inside a 1-hour window.
+   Check which side is wrong before changing code.
+8. **Quadratic slowdown:** 1,150 CloudTrail events took the suite from about 1 second to 42. Fix: a
+   two-pointer sliding window and ID sets (back to about 2 seconds).
+9. **One noisy rule (73.7% FP) on real admin activity.** Fix: one documented known-benign
+   entry (→ 13.2%), plus tests that it never hides an attack.
 
 ---
 
-## 9. Command cheat sheet
+## 6. What's left
+
+1. **Runbooks (`docs/04-runbooks.md`):** for each rule, write: how to tell if it's real
+   (triage questions), what else to look at (scope), the smallest action that stops the
+   attacker (containment), and what evidence to keep. Start from each rule's
+   "Tuning" notes in `03-detections.md`.
+2. **Threat model (`docs/02-threat-model.md`):** answer the questions in
+   `docs/interview-prep.md` → Phase 1 → "Exercise" for each dataset in `sources.yml`.
+3. **A bigger benign baseline:** export a week of normal activity from your own test tenant
+   (`05-go-live.md`), add it as a dataset with `default_label: benign`, and see which rules get noisy.
+4. **Phase 7, the SigmaHQ PR:** fork https://github.com/SigmaHQ/sigma, read its
+   `CONTRIBUTING.md`, adapt the strongest rule (the CreateAccessKey `fieldref` rule or the
+   device-code rule) to their naming and field conventions, run their validation, and open a PR
+   that links back to this repo.
+5. **Live validation:** run Stratus Red Team in a throwaway AWS account
+   (`simulations/aws_keyleak/README.md`) with GuardDuty on, and fill in the "actually fired?"
+   column of the GuardDuty comparison.
+
+---
+
+## 7. Command cheat sheet
 
 | Task | Command |
 |---|---|
 | Activate venv (PowerShell) | `.venv\Scripts\activate` |
 | Install deps | `pip install -r requirements.txt` |
-| Run tests | `pytest -v` |
+| Run tests | `pytest -q` (or `-v` for every test name) |
 | Run the harness | `python harness/replay.py` |
-| Regenerate logs, then run | `python harness/replay.py --regenerate` |
-| Commit a phase | `git add -A` then `git commit -m "Phase N: ..."` |
-| Push to GitHub | `git push` |
+| Rebuild logs, then run | `python harness/replay.py --regenerate` |
+| Download raw data again | `python -m simulations.public_datasets.fetch` |
+| New rule id | `python -c "import uuid; print(uuid.uuid4())"` |
+| Commit | `git add -A` then `git commit -m "..."` |
+| Push | `git push` |
