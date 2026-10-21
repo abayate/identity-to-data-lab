@@ -49,5 +49,5 @@ git push -u origin aws-iam-policy-version-wildcard
 gh pr create --repo SigmaHQ/sigma --title "new: AWS IAM Policy Version With Wildcard Actions Set As Default" --body-file <this repo>/upstream/sigmahq/PULL_REQUEST.md
 ```
 
-Before submitting, set `author:` in the rule to the name you want credited (it's currently
-your GitHub handle), and check SigmaHQ's latest merged PRs for any change in conventions.
+The rule credits **Anthony Bayate Jr.** as author. Before submitting, check SigmaHQ's latest
+merged PRs for any change in conventions.

@@ -9,7 +9,7 @@ references:
     - https://rhinosecuritylabs.com/aws/aws-privilege-escalation-methods-mitigation/
     - https://docs.aws.amazon.com/IAM/latest/APIReference/API_CreatePolicyVersion.html
     - https://github.com/splunk/attack_data/tree/master/datasets/attack_techniques/T1078/aws_create_policy_version
-author: abayate
+author: Anthony Bayate Jr.
 date: 2026-10-21
 tags:
     - attack.privilege-escalation
