@@ -1,5 +1,9 @@
 # Upstream contribution: SigmaHQ
 
+> **Status:** submitted as [SigmaHQ/sigma#6501](https://github.com/SigmaHQ/sigma/pull/6501)
+> on 2026-10-21. It's waiting for maintainer review; SigmaHQ's own validation workflows are
+> waiting for maintainer approval, as they do for all first-time contributors.
+
 This folder holds lab rules reformatted to [SigmaHQ](https://github.com/SigmaHQ/sigma)'s
 conventions, ready to submit as a pull request. The folder layout mirrors theirs, so a file
 copies straight into a fork at the same path.

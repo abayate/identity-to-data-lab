@@ -27,7 +27,7 @@ auto-closes documented false positives and attaches investigation context to the
 | **ATT&CK coverage** | 12 of 15 planned techniques **tested** against real attack data |
 | **Auto-triage** | Noisiest rule: **73.7% → 13.2%** false-positive rate, with **zero** real attacks suppressed |
 | **Tests** | 200+ pytest checks in ~2 seconds, run on every push; CI also fails if the committed results go stale |
-| **Upstream** | One rule reformatted for [SigmaHQ](https://github.com/SigmaHQ/sigma) and passing SigmaHQ's own validators ([details](upstream/sigmahq/)) |
+| **Upstream** | One rule submitted to [SigmaHQ](https://github.com/SigmaHQ/sigma): [PR #6501](https://github.com/SigmaHQ/sigma/pull/6501), passing SigmaHQ's own validators ([details](upstream/sigmahq/)) |
 
 ![ATT&CK coverage map](reports/coverage.svg)
 

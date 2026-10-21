@@ -19,7 +19,7 @@ them as your screenshots: if your output matches, the step worked.
 | 4 | AWS CloudTrail detections (6 rules), GuardDuty comparison | ✅ Done |
 | 5 | Replay harness, auto-triage, alert queue, ATT&CK map, CI summary | ✅ Done |
 | 6 | README, docs | ✅ README, architecture, detections, go-live. **Open:** runbooks (`04-runbooks.md`) and threat model (`02-threat-model.md`), written by you |
-| 7 | Upstream PR to SigmaHQ | ✅ Rule + PR text prepared and validated with SigmaHQ's tools (`upstream/sigmahq/`). **Open:** submitting it from your GitHub account |
+| 7 | Upstream PR to SigmaHQ | ✅ Submitted: [SigmaHQ/sigma#6501](https://github.com/SigmaHQ/sigma/pull/6501). **Open:** respond to reviewer comments until it's merged |
 
 Current result: **207 tests pass**, and 1,563 of 1,611 malicious events (97%) are caught by at least one rule.
 
@@ -245,12 +245,11 @@ README (front page), `01-architecture.md`, `03-detections.md`, `05-go-live.md`,
    `docs/interview-prep.md` → Phase 1 → "Exercise" for each dataset in `sources.yml`.
 3. **A bigger benign baseline:** export a week of normal activity from your own test tenant
    (`05-go-live.md`), add it as a dataset with `default_label: benign`, and see which rules get noisy.
-4. **Phase 7, the SigmaHQ PR:** prepared in `upstream/sigmahq/`. The rule (IAM policy version
-   with wildcard actions) isn't already in SigmaHQ, passes their `test_rules.py`,
-   `test_logsource.py` and `sigma check`, and the PR text follows their template. Submitting it
-   is the last step: the exact commands are in `upstream/sigmahq/README.md`. The other strong
-   rules (device code, consent, key for another user, snapshot sharing) already exist in
-   SigmaHQ, which is why this one was picked.
+4. **Phase 7, the SigmaHQ PR:** submitted as https://github.com/SigmaHQ/sigma/pull/6501.
+   When a reviewer comments (GitHub emails you), make the change in
+   `upstream/sigmahq/rules/...` here first, keep `pytest tests/test_upstream.py` green, then
+   copy the file to the `aws-iam-policy-version-wildcard` branch of your fork
+   (`abayate/sigma`) and push. The PR updates by itself. Reply to each comment saying what changed.
 5. **Live validation:** run Stratus Red Team in a throwaway AWS account
    (`simulations/aws_keyleak/README.md`) with GuardDuty on, and fill in the "actually fired?"
    column of the GuardDuty comparison.
