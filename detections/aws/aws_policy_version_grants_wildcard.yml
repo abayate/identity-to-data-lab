@@ -23,9 +23,9 @@ detection:
     eventSource: iam.amazonaws.com
     eventName: CreatePolicyVersion
     requestParameters.setAsDefault: true
-    requestParameters.policyDocument|re: '"Action"\s*:\s*\[?\s*"(\*|iam:\*)"'
+    requestParameters.policyDocument|re: '"Action"\s*:\s*(\[[^\]]*)?"(\*|iam:\*)"'
   condition: selection
 falsepositives:
   - Break-glass or sandbox-account admin policies being (re)written on purpose
-  - The regex only checks the first action of a list; a wildcard later in a list is missed
+  - A policy that grants a whole service (e.g. "s3:*") is not matched; only full or IAM-wide wildcards
 level: high

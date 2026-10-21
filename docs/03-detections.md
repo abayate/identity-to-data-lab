@@ -341,20 +341,22 @@ attempts), 28 FP raw, 23 auto-closed, 5 open.
 **Catches:** the classic "rewrite my own policy to admin" escalation.
 
 **Sigma logic:** `CreatePolicyVersion`, `setAsDefault: true`, and the policy document
-matches `"Action": "*"` or `"Action": "iam:*"` (regex, whitespace-tolerant).
+has `"*"` or `"iam:*"` as an action, either alone or anywhere in an action list
+(regex, whitespace-tolerant).
 
 ```kql
 AWSCloudTrail
 | where EventSource == "iam.amazonaws.com" and EventName == "CreatePolicyVersion"
 | extend Params = parse_json(RequestParameters)
 | where tobool(Params.setAsDefault)
-    and tostring(Params.policyDocument) matches regex @'"Action"\s*:\s*\[?\s*"(\*|iam:\*)"'
+    and tostring(Params.policyDocument) matches regex @'"Action"\s*:\s*(\[[^\]]*)?"(\*|iam:\*)"'
 | project TimeGenerated, UserIdentityArn, PolicyArn = tostring(Params.policyArn), SourceIpAddress
 ```
 
-**Tuning:** rare in production. Watch for sandbox / break-glass accounts. Known gap: the
-regex checks the first entry of an action list, so `["s3:GetObject", "*"]` slips through.
-Parsing the JSON in KQL (`mv-expand` the statements) closes it.
+**Tuning:** rare in production. Watch for sandbox / break-glass accounts. An earlier
+version only checked the first entry of an action list, so `["s3:GetObject", "*"]` slipped
+through. The regex now scans the whole list, and `test_policy_wildcard_regex_cases` pins
+that down. Still not covered: service-wide grants like `"s3:*"` (a different, noisier rule).
 
 **Lab result:** 3 TP alerts (including one failed attempt, which is still worth seeing), 0 FP.
 

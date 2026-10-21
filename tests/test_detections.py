@@ -247,3 +247,18 @@ def test_identity_to_data_rule_fires_when_both_halves_present():
 def test_identity_to_data_rule_needs_both_halves_in_time(kwargs):
     rule = RULES["data/identity_to_data_access_after_multi_ip_session.yml"]
     assert find_alerts(rule, chain_events(**kwargs)) == []
+
+
+@pytest.mark.parametrize("document, should_fire", [
+    ('{"Statement": [{"Effect": "Allow", "Action": "*", "Resource": "*"}]}', True),
+    ('{"Statement": [{"Action" : "iam:*", "Resource": "*"}]}', True),
+    ('{"Statement": [{"Action": ["s3:GetObject", "*"], "Resource": "*"}]}', True),   # wildcard later in a list
+    ('{"Statement": [{"Action": ["ec2:Describe*", "iam:*"]}]}', True),
+    ('{"Statement": [{"Action": "s3:*", "Resource": "*"}]}', False),                # one service only
+    ('{"Statement": [{"Action": ["s3:GetObject"], "Resource": "*"}]}', False),     # wildcard resource only
+])
+def test_policy_wildcard_regex_cases(document, should_fire):
+    rule = RULES["aws/aws_policy_version_grants_wildcard.yml"]
+    event = {"eventSource": "iam.amazonaws.com", "eventName": "CreatePolicyVersion",
+             "requestParameters": {"setAsDefault": True, "policyDocument": document}}
+    assert bool(find_alerts(rule, [event])) is should_fire

@@ -3,7 +3,6 @@
 [![CI](https://github.com/abayate/identity-to-data-lab/actions/workflows/ci.yml/badge.svg)](https://github.com/abayate/identity-to-data-lab/actions/workflows/ci.yml)
 ![Python](https://img.shields.io/badge/python-3.11%2B-blue)
 ![Rules](https://img.shields.io/badge/Sigma%20rules-13-informational)
-![Tests](https://img.shields.io/badge/tests-198%20passing-brightgreen)
 ![Data](https://img.shields.io/badge/data-real%20public%20attack%20telemetry-orange)
 
 **Detection-as-code for one attack story, from start to finish:** a stolen Microsoft 365
@@ -27,7 +26,8 @@ auto-closes documented false positives and attaches investigation context to the
 | **Whole-chain catch rate** | **97%**: 1,563 of 1,611 malicious events are part of at least one alert |
 | **ATT&CK coverage** | 12 of 15 planned techniques **tested** against real attack data |
 | **Auto-triage** | Noisiest rule: **73.7% → 13.2%** false-positive rate, with **zero** real attacks suppressed |
-| **Tests** | 198 pytest checks in ~2 seconds, run on every push |
+| **Tests** | 200+ pytest checks in ~2 seconds, run on every push; CI also fails if the committed results go stale |
+| **Upstream** | One rule reformatted for [SigmaHQ](https://github.com/SigmaHQ/sigma) and passing SigmaHQ's own validators ([details](upstream/sigmahq/)) |
 
 ![ATT&CK coverage map](reports/coverage.svg)
 
@@ -199,8 +199,10 @@ Full table with finding names and reasoning: [`docs/03-detections.md`](docs/03-d
 - Auto-close **never** hides a true positive; every known-benign entry is used and has a reason.
 - Committed sample logs are byte-identical to what the converter produces (no hand edits).
 - The matcher's features (modifiers, conditions, correlations, aliases, `fieldref`) each have unit tests.
+- The SigmaHQ-formatted copy of a rule raises exactly the same alerts as the lab version.
+- CI regenerates `reports/` and fails if they differ from what's committed, so the numbers in this README can't silently go stale.
 
-Run them: `pytest -v` (198 tests, ~2 seconds).
+Run them: `pytest -v` (200+ tests, ~2 seconds).
 </details>
 
 ---
@@ -214,7 +216,7 @@ python -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 
-pytest -v                          # 198 tests: every rule vs. real attack data
+pytest -v                          # 200+ tests: every rule vs. real attack data
 python harness/replay.py           # per-rule table + writes reports/
 python harness/replay.py --regenerate   # rebuild sample logs from raw data first
 ```
@@ -247,7 +249,8 @@ simulations/
 data/raw/              unmodified public datasets (+ LICENSE, NOTICE)
 data/sample-logs/      labeled JSONL the rules run against (generated)
 reports/               results, alert queue, ATT&CK coverage (generated)
-tests/                 198 pytest checks
+upstream/sigmahq/      rule + PR text prepared for SigmaHQ, validated with their tools
+tests/                 200+ pytest checks
 docs/                  architecture · detections · go-live · interview prep · replication guide
 ```
 

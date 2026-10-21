@@ -567,3 +567,42 @@ all of it on every push and posts the tables to the Actions summary.
 2. What context would you add next to `enrich.py`? (Ideas: a geo-IP / ASN reputation lookup,
    the user's group memberships, recent password resets.)
 3. Why does the alert queue show at most five events per alert?
+
+---
+
+## Phase 7 — Preparing an upstream contribution to SigmaHQ
+
+### The 30-second version
+
+> "I picked the rule SigmaHQ didn't already have, an IAM policy version rewritten to grant
+> wildcard actions, and reformatted it to their conventions. Then I ran *their* validators
+> on it: their rule tests, their logsource tests, and sigma-cli with their validation
+> config. All clean. A test in my repo proves the upstream copy raises exactly the same
+> alerts as my lab rule on real attack data."
+
+### Why that rule and not your "best" one?
+
+I checked SigmaHQ first. Device-code sign-in, user consent, key-for-another-user and snapshot
+sharing all already have SigmaHQ rules, and a duplicate PR gets closed. `CreatePolicyVersion`
+had nothing. Checking prior art before building is part of the job.
+
+### What changed when you reformatted it?
+
+- 4-space indentation, `|` block description, a keyword-style title (SigmaHQ's title convention).
+- Tactic tags with hyphens (`attack.privilege-escalation`), as SigmaHQ uses.
+- No lab-only text (no answer-key references, no lab name in the rule).
+- Their PR template kept intact, comments included. Their template says not to delete any of it.
+
+### A bug found while preparing it
+
+The original regex only caught a wildcard in the *first* entry of an action list, so
+`["s3:GetObject", "*"]` slipped through. I rewrote it to scan the whole list, then pinned six
+edge cases in a parametrized test (including two that must **not** match). Preparing code for
+outside review is a good forcing function.
+
+### Practice questions
+
+1. How did you make sure your rule wasn't a duplicate?
+2. Why does the rule match `"iam:*"` but not `"s3:*"`?
+3. What would a SigmaHQ reviewer likely push back on? (Think: regex on a JSON string, level `high`.)
+4. Why test that the upstream copy behaves exactly like the lab rule?
