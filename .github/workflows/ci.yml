@@ -21,10 +21,33 @@ jobs:
         run: pytest -v
 
       - name: Replay sample logs through all rules
-        # Prints the per-rule TP/FP table and adds it to this run's summary page.
+        # Prints the per-rule TP/FP table, adds it to this run's summary page,
+        # and builds the interactive dashboard (reports/dashboard/index.html).
         run: python harness/replay.py
 
       - name: Check committed reports are up to date
         # replay.py just rewrote reports/. If they differ from what's committed, someone changed
         # rules or data without re-running the replay, so the README numbers would be stale.
         run: git diff --exit-code -- reports/
+
+      - name: Package the dashboard for GitHub Pages
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        uses: actions/upload-pages-artifact@v5
+        with:
+          path: reports/dashboard
+
+  # Publishes the dashboard at https://abayate.github.io/identity-to-data-lab/
+  # Only from main, and only after every test above has passed.
+  deploy-dashboard:
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v5

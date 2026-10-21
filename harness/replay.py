@@ -12,7 +12,8 @@ What it does, in order:
   4. Scores each rule (true / false positives) and triages its hits with enrich.py.
   5. Prints a summary table and writes reports/ (results.md, results.json,
      alerts.md, coverage.md, coverage.svg).
-  6. If running in GitHub Actions, also adds the summary to the run's summary page.
+  6. Writes the interactive dashboard, reports/dashboard/index.html (--open opens it).
+  7. If running in GitHub Actions, also adds the summary to the run's summary page.
 """
 
 import argparse
@@ -20,6 +21,7 @@ import json
 import os
 import subprocess
 import sys
+import webbrowser
 from pathlib import Path
 
 # Allow `python harness/replay.py` (not just `python -m harness.replay`) by putting
@@ -28,6 +30,7 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+from harness.dashboard import write_dashboard  # noqa: E402
 from harness.coverage import build_coverage, coverage_markdown, coverage_svg, techniques_in_rule  # noqa: E402
 from harness.enrich import load_known_benign, triage  # noqa: E402
 from harness.evaluate import alert_is_true_positive, find_alerts, load_rules  # noqa: E402
@@ -120,6 +123,7 @@ def evaluate_all(rules, logs, known_benign):
             "caught_ids": {id(e) for alert in alerts for e in alert if e.get("lab_label") == "malicious"},
             "open_alerts": [t for t in triaged if t["status"] == "open"],
             "closed_alerts": [t for t in triaged if t["status"] == "auto_closed"],
+            "records": records,  # kept for the dashboard's field-by-field explanations
         })
     return results
 
@@ -217,7 +221,7 @@ def write_reports(out_dir, results, coverage, caught, total_malicious):
     # JSON for machines: drop the internal fields that can't be serialized.
     serializable = [
         {key: (sorted(value) if key == "techniques" else value)
-         for key, value in r.items() if key not in ("caught_ids", "open_alerts", "closed_alerts")}
+         for key, value in r.items() if key not in ("caught_ids", "open_alerts", "closed_alerts", "records")}
         for r in results
     ]
     write_text_lf(out_dir / "results.json",
@@ -233,6 +237,7 @@ def main(argv=None):
     parser.add_argument("--known-benign", default=REPO_ROOT / "harness" / "known_benign.yml", type=Path)
     parser.add_argument("--out", default=REPO_ROOT / "reports", type=Path)
     parser.add_argument("--regenerate", action="store_true", help="re-run simulations first")
+    parser.add_argument("--open", action="store_true", help="open the interactive dashboard in a browser")
     args = parser.parse_args(argv)
 
     if args.regenerate:
@@ -244,11 +249,15 @@ def main(argv=None):
     caught, total_malicious = chain_coverage(logs, results)
     coverage = build_coverage(results)
     table = write_reports(args.out, results, coverage, caught, total_malicious)
+    dashboard = write_dashboard(args.out, rules, results, logs, coverage, caught, total_malicious)
 
     print(f"Loaded {sum(len(v) for v in logs.values())} log events and {len(rules)} rules.\n")
     print(table)
     print(coverage_markdown(coverage))
     print(f"Reports written to {args.out}")
+    print(f"Interactive dashboard: {dashboard}")
+    if args.open:
+        webbrowser.open(dashboard.resolve().as_uri())
 
     # GitHub Actions sets this variable to a file; anything appended shows on the run's summary page.
     summary_file = os.environ.get("GITHUB_STEP_SUMMARY")

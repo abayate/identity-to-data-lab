@@ -10,3 +10,6 @@ htmlcov/
 .DS_Store
 # ...but the committed raw public datasets are .log files and must be kept.
 !data/raw/**/*.log
+
+# The interactive dashboard is ~3 MB of generated HTML; CI builds it and deploys it to GitHub Pages.
+reports/dashboard/

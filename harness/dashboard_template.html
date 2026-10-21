@@ -1,0 +1,655 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Detection Lab Dashboard</title>
+<meta name="description" content="Interactive results of the identity-to-data detection lab: real attack telemetry, Sigma rules firing, triage, and ATT&CK coverage.">
+<style>
+/* ---- Theme tokens: light by default, dark when the OS asks for it ---- */
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --panel-2: #f0f2f5; --text: #1b1f24; --muted: #5b6573;
+  --border: #d9dee5; --accent: #2563eb; --accent-soft: #e0e9ff;
+  --bad: #d23b3b; --bad-soft: #fde7e7; --good: #2e7d32; --good-soft: #e3f3e4;
+  --warn: #b26a00; --warn-soft: #fff1d6; --closed: #6b7280; --neutral: #3b82f6;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1318; --panel: #171c23; --panel-2: #1f2630; --text: #e6eaf0; --muted: #9aa5b4;
+    --border: #2c3542; --accent: #6ea0ff; --accent-soft: #1e2a44;
+    --bad: #ff6b6b; --bad-soft: #3a1d1f; --good: #5cc766; --good-soft: #1b3320;
+    --warn: #f0b04a; --warn-soft: #3a2c12; --closed: #8b93a1; --neutral: #6ea0ff;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1318; --panel: #171c23; --panel-2: #1f2630; --text: #e6eaf0; --muted: #9aa5b4;
+  --border: #2c3542; --accent: #6ea0ff; --accent-soft: #1e2a44;
+  --bad: #ff6b6b; --bad-soft: #3a1d1f; --good: #5cc766; --good-soft: #1b3320;
+  --warn: #f0b04a; --warn-soft: #3a2c12; --closed: #8b93a1; --neutral: #6ea0ff;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text);
+       font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+a { color: var(--accent); }
+code, pre, .mono { font-family: var(--mono); font-size: 12.5px; }
+pre { background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 10px 12px; overflow: auto; max-height: 420px; margin: 8px 0; white-space: pre; }
+header { position: sticky; top: 0; z-index: 10; background: var(--panel); border-bottom: 1px solid var(--border); }
+.wrap { max-width: 1240px; margin: 0 auto; padding: 0 16px; }
+.top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 12px 0 6px; }
+.top h1 { font-size: 18px; margin: 0; flex: 1 1 auto; }
+.top h1 span { color: var(--muted); font-weight: 400; }
+nav { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; }
+nav button { border: 0; background: none; color: var(--muted); padding: 7px 12px; border-radius: 8px;
+             font: inherit; cursor: pointer; white-space: nowrap; }
+nav button.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+main { padding: 20px 0 60px; }
+h2 { font-size: 20px; margin: 4px 0 6px; }
+h3 { font-size: 16px; margin: 18px 0 8px; }
+p.lead { color: var(--muted); margin: 0 0 18px; max-width: 900px; }
+.grid { display: grid; gap: 12px; }
+.kpis { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px; }
+.kpi .n { font-size: 28px; font-weight: 700; line-height: 1.1; }
+.kpi .l { color: var(--muted); font-size: 13px; }
+.btn { border: 1px solid var(--border); background: var(--panel); color: var(--text); padding: 6px 12px;
+       border-radius: 8px; font: inherit; cursor: pointer; }
+.btn:hover { border-color: var(--accent); }
+.btn.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+.chip { display: inline-block; padding: 2px 9px; border-radius: 999px; font-size: 12px; border: 1px solid var(--border);
+        background: var(--panel-2); margin: 2px 4px 2px 0; }
+.chip.click { cursor: pointer; }
+.chip.on { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.badge { display: inline-block; padding: 1px 8px; border-radius: 6px; font-size: 12px; font-weight: 600; }
+.b-mal { background: var(--bad-soft); color: var(--bad); }
+.b-ben { background: var(--good-soft); color: var(--good); }
+.b-open { background: var(--warn-soft); color: var(--warn); }
+.b-closed { background: var(--panel-2); color: var(--closed); }
+.b-high { background: var(--bad-soft); color: var(--bad); }
+.b-medium { background: var(--warn-soft); color: var(--warn); }
+.b-tested { background: var(--good-soft); color: var(--good); }
+.b-gap { background: var(--panel-2); color: var(--closed); }
+.muted { color: var(--muted); }
+.small { font-size: 13px; }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.flow { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 8px; }
+.flow .step { position: relative; }
+.flow .step b { display: block; font-size: 13px; color: var(--accent); }
+.lane { margin-bottom: 14px; }
+.lane-title { font-weight: 600; margin-bottom: 6px; }
+.techs { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.tech { border-radius: 8px; padding: 10px 12px; border: 1px solid var(--border); cursor: pointer; background: var(--panel); }
+.tech.tested { border-left: 5px solid var(--good); }
+.tech.gap { border-left: 5px solid var(--closed); opacity: .85; }
+.tech .id { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+.split { display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+.timeline { width: 100%; height: 150px; display: block; }
+.feed { max-height: 300px; overflow: auto; font-size: 13px; }
+.feed div { padding: 4px 6px; border-bottom: 1px dashed var(--border); }
+.feed .alert { background: var(--warn-soft); border-left: 3px solid var(--warn); font-weight: 600; }
+.feed .alert.closed { background: var(--panel-2); border-left-color: var(--closed); font-weight: 500; }
+table { border-collapse: collapse; width: 100%; font-size: 13px; }
+th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--panel); }
+tbody tr { cursor: pointer; }
+tbody tr:hover { background: var(--panel-2); }
+tbody tr.sel { background: var(--accent-soft); }
+tbody tr.dim { opacity: .35; }
+.scroll { max-height: 420px; overflow: auto; border: 1px solid var(--border); border-radius: 8px; }
+.ok { color: var(--good); font-weight: 700; }
+.no { color: var(--bad); font-weight: 700; }
+.inspector { position: sticky; top: 110px; max-height: calc(100vh - 130px); overflow: auto; }
+.cond { font-family: var(--mono); background: var(--panel-2); padding: 3px 8px; border-radius: 6px; display: inline-block; }
+details summary { cursor: pointer; }
+.tabs2 { display: flex; gap: 4px; margin: 10px 0 0; }
+.tabs2 button { border: 1px solid var(--border); background: var(--panel-2); color: var(--muted); border-radius: 7px; padding: 3px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+.tabs2 button.on { color: var(--accent); border-color: var(--accent); background: var(--accent-soft); }
+.switch { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 13px; }
+.switch input { width: 34px; height: 18px; accent-color: var(--accent); }
+.empty { padding: 30px; text-align: center; color: var(--muted); }
+.legend span { margin-right: 14px; font-size: 12.5px; color: var(--muted); }
+.dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <div class="top">
+      <h1>🛡️ Identity-to-Data Detection Lab <span>· interactive results</span></h1>
+      <label class="switch" title="Labels come from each dataset's documentation. Real analysts never see them. Turn this off to view the data the way a SOC does.">
+        <input type="checkbox" id="answerKey" checked> Answer key
+      </label>
+      <a class="btn" href="https://github.com/abayate/identity-to-data-lab" target="_blank" rel="noopener">GitHub repo</a>
+    </div>
+    <nav id="nav"></nav>
+  </div>
+</header>
+<main class="wrap" id="view"></main>
+
+<script>
+// All results are embedded below by harness/dashboard.py. No server, no external scripts.
+const D = /*__DASHBOARD_DATA__*/null;
+
+// ---------------------------------------------------------------------------
+// Tiny DOM helper. Every piece of log data goes in as text (never as HTML):
+// log fields are attacker-controlled, so treating them as HTML would let a
+// malicious log line inject code into the dashboard (stored XSS).
+// ---------------------------------------------------------------------------
+function el(tag, props = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(props)) {
+    if (k === "class") node.className = v;
+    else if (k === "text") node.textContent = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else if (v !== undefined && v !== null && v !== false) node.setAttribute(k, v);
+  }
+  for (const child of children.flat()) {
+    if (child === null || child === undefined || child === false) continue;
+    node.append(child instanceof Node ? child : document.createTextNode(String(child)));
+  }
+  return node;
+}
+const svgEl = (tag, attrs = {}) => {
+  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+  return node;
+};
+const fmt = n => Number(n).toLocaleString("en-US");
+const pct = x => (x * 100).toFixed(1) + "%";
+const time = t => (t || "").replace("T", " ").replace(/\.\d+Z$/, "Z");
+
+// ---------------------------------------------------------------------------
+// Indexes built once from the data
+// ---------------------------------------------------------------------------
+const ruleByKey = Object.fromEntries(D.rules.map(r => [r.key, r]));
+const alertsByEvent = {};
+for (const a of D.alerts) for (const i of a.events) (alertsByEvent[i] ||= []).push(a);
+const eventsByDataset = {};
+D.events.forEach((e, i) => { if (e.ds) (eventsByDataset[e.ds] ||= []).push(i); });
+for (const ds in eventsByDataset) eventsByDataset[ds].sort((a, b) => D.events[a].t.localeCompare(D.events[b].t));
+const GAP_REASONS = {
+  "T1566": "The phishing email lives in mail-flow logs, which this lab doesn't ingest.",
+  "T1539": "The cookie is stolen on the attacker's own proxy, so no victim log records it.",
+  "T1552.001": "The key leaks outside AWS (e.g. pushed to GitHub), so CloudTrail has no event.",
+};
+const LEVEL_ORDER = { critical: 0, high: 1, medium: 2, low: 3, informational: 4 };
+
+const state = { tab: "overview", answerKey: true, dataset: "aitm_session_cookie_replay_m365",
+                event: null, techFilter: null, ruleFilter: null, play: null, shown: null };
+
+// ---------------------------------------------------------------------------
+// Navigation
+// ---------------------------------------------------------------------------
+const TABS = [
+  ["overview", "Overview"], ["lifecycle", "Detection lifecycle"], ["replay", "▶ Attack replay"], ["queue", "🚨 Analyst queue"],
+  ["rules", "Detection rules"], ["coverage", "ATT&CK coverage"], ["data", "The data"],
+];
+function go(tab, extra = {}) {
+  stopPlay();
+  Object.assign(state, { tab }, extra);
+  render();
+  window.scrollTo({ top: 0 });
+}
+function renderNav() {
+  const nav = document.getElementById("nav");
+  nav.replaceChildren(...TABS.map(([id, label]) =>
+    el("button", { class: state.tab === id ? "on" : "", onclick: () => go(id) }, label)));
+}
+document.getElementById("answerKey").addEventListener("change", e => { state.answerKey = e.target.checked; render(); });
+
+function render() {
+  renderNav();
+  const view = document.getElementById("view");
+  const pages = { overview: viewOverview, lifecycle: viewLifecycle, replay: viewReplay, queue: viewQueue,
+                  rules: viewRules, coverage: viewCoverage, data: viewData };
+  view.replaceChildren(pages[state.tab]());
+}
+
+// ---------------------------------------------------------------------------
+// Shared pieces
+// ---------------------------------------------------------------------------
+function labelBadge(label) {
+  if (!state.answerKey) return null;
+  return el("span", { class: "badge " + (label === "malicious" ? "b-mal" : "b-ben") },
+            label === "malicious" ? "attack" : "normal");
+}
+function truthBadge(alert) {
+  if (!state.answerKey) return null;
+  return alert.truth === "true_positive"
+    ? el("span", { class: "badge b-mal" }, "✔ real attack")
+    : el("span", { class: "badge b-ben" }, "✘ false positive");
+}
+function levelBadge(level) { return el("span", { class: "badge b-" + level }, level); }
+function statusBadge(status) {
+  return status === "open" ? el("span", { class: "badge b-open" }, "OPEN")
+                           : el("span", { class: "badge b-closed" }, "AUTO-CLOSED");
+}
+function contextChips(ctx) {
+  const chips = [];
+  for (const [k, v] of Object.entries(ctx || {})) {
+    const m = k.match(/^new_(.+)_for_user$/);
+    if (m) chips.push(el("span", { class: "chip", style: v ? "border-color:var(--warn)" : "" },
+                         (v ? "🆕 " : "✓ ") + m[1] + (v ? " never seen for this user" : " seen before")));
+  }
+  if (ctx && ctx.user) chips.unshift(el("span", { class: "chip" }, "👤 " + ctx.user));
+  if (ctx && ctx.other_events_for_user !== undefined)
+    chips.push(el("span", { class: "chip" }, "📜 " + ctx.other_events_for_user + " other events for user"));
+  return chips;
+}
+function datasetOfAlert(alert) { return D.events[alert.trigger].ds; }
+function openEvent(index) { go("replay", { dataset: D.events[index].ds, event: index, shown: null }); }
+
+// ---------------------------------------------------------------------------
+// Overview
+// ---------------------------------------------------------------------------
+function viewOverview() {
+  const s = D.summary;
+  const key = D.rules.find(r => r.title.startsWith("AWS Access Key Created"));
+  const kpis = [
+    [fmt(s.events), "real log events replayed (Entra ID, Microsoft 365, AWS CloudTrail)"],
+    [fmt(s.malicious), "of them are attacker activity, hidden among " + fmt(s.benign) + " normal events"],
+    [pct(s.caught / s.malicious), "of attacker events caught by at least one rule (" + fmt(s.caught) + ")"],
+    [s.rules, "Sigma detection rules, each with a KQL version for Microsoft Sentinel"],
+    [s.techniques_tested + " / " + s.techniques_planned, "ATT&CK techniques proven against real attack data"],
+    key ? [pct(key.stats.fp_rate) + " → " + pct(key.stats.fp_rate_after_triage),
+           "false positives on the noisiest rule, before → after automated triage"] : null,
+  ].filter(Boolean);
+  const pipeline = [
+    ["1 · Log event arrives", "A real sign-in, file access or AWS API call from a public attack dataset."],
+    ["2 · Rules evaluate it", "Each Sigma rule checks the event's fields, or a window of events for correlations."],
+    ["3 · Alert raised", "A match becomes an alert, carrying the events that caused it."],
+    ["4 · Automated triage", "Known-benign patterns are auto-closed with a written reason. The rest get context."],
+    ["5 · Analyst decides", "The queue shows what's new for the user (IP, network, country) to speed up the call."],
+  ];
+  return el("div", {},
+    el("h2", {}, "Watch real attacks get caught"),
+    el("p", { class: "lead" },
+      "This lab replays published attack telemetry (Evilginx session theft, device-code phishing, OAuth consent abuse, " +
+      "SharePoint exfiltration with rclone, AWS privilege escalation, snapshot theft) through detection-as-code rules. " +
+      "Everything below comes from the latest run of the test harness, so the alerts are real results, not mock-ups."),
+    el("div", { class: "card", style: "margin-bottom:12px;border-left:5px solid var(--good)" },
+      el("b", {}, "100% real telemetry. No simulated events. "),
+      el("span", { class: "small" }, "Every event was captured by Splunk's Threat Research Team while real attack tools (Evilginx, TokenTactics, rclone, Atomic Red Team, Stratus Red Team…) ran against real Microsoft 365 and AWS test tenants, then published as "),
+      el("a", { href: "https://github.com/splunk/attack_data", target: "_blank", rel: "noopener", class: "small" }, "splunk/attack_data ↗"),
+      el("span", { class: "small" }, ". Tenant details were anonymized by Splunk before publication.")),
+    el("div", { class: "grid kpis" }, kpis.map(([n, l]) => el("div", { class: "card kpi" }, el("div", { class: "n" }, n), el("div", { class: "l" }, l)))),
+    el("div", { class: "row", style: "margin:16px 0 4px" },
+      el("button", { class: "btn", onclick: () => go("lifecycle") }, "↻ How this project was built, end to end"),
+      el("button", { class: "btn primary", onclick: () => go("replay", { dataset: "aitm_session_cookie_replay_m365", event: null }) },
+         "▶ Replay the stolen-session → mailbox attack"),
+      el("button", { class: "btn", onclick: () => go("queue") }, "🚨 Work the analyst queue"),
+      el("button", { class: "btn", onclick: () => go("rules") }, "Read the detection rules")),
+    el("h3", {}, "How one detection happens"),
+    el("div", { class: "flow" }, pipeline.map(([t, d]) => el("div", { class: "card step" }, el("b", {}, t), el("span", { class: "small" }, d)))),
+    el("h3", {}, "The attack chain: green steps were caught on real attack data"),
+    chainLanes(),
+  );
+}
+function chainLanes() {
+  const branches = [...new Set(D.coverage.map(c => c.branch))];
+  const icons = { Identity: "🔑 Identity (Entra ID)", Data: "📁 Data (SharePoint · OneDrive · Mail)", AWS: "☁️ AWS branch (leaked key)" };
+  return el("div", {}, branches.map(b => el("div", { class: "lane" },
+    el("div", { class: "lane-title" }, icons[b] || b),
+    el("div", { class: "techs" }, D.coverage.filter(c => c.branch === b).map(c =>
+      el("div", { class: "tech " + c.status, title: c.status === "gap" ? (GAP_REASONS[c.id] || "No rule yet") : "Click to see the rules",
+                  onclick: () => c.status === "gap" ? go("coverage") : go("rules", { techFilter: c.id }) },
+        el("div", { class: "id" }, c.id + "  ", el("span", { class: "badge b-" + c.status }, c.status === "tested" ? "caught" : "gap")),
+        el("div", {}, c.name),
+        el("div", { class: "small muted" }, c.status === "gap" ? (GAP_REASONS[c.id] || "") : c.rules.length + " rule" + (c.rules.length > 1 ? "s" : "")))))
+  )));
+}
+
+// ---------------------------------------------------------------------------
+// Detection lifecycle: the full cycle a detection team runs, with the real artifacts
+// ---------------------------------------------------------------------------
+const REPO = "https://github.com/abayate/identity-to-data-lab/blob/main/";
+function viewLifecycle() {
+  const s = D.summary;
+  const key = D.rules.find(r => r.title.startsWith("AWS Access Key Created"));
+  const stages = [
+    ["1", "Threat & hypothesis",
+     "Start from how attackers actually get in today: stolen sessions (adversary-in-the-middle phishing), device-code and OAuth-consent phishing, then data theft from SharePoint, plus leaked cloud keys in AWS. Each step is mapped to MITRE ATT&CK before any rule is written.",
+     [["ATT&CK coverage", () => go("coverage")]], [["Architecture", "docs/01-architecture.md"]]],
+    ["2", "Data sourcing",
+     D.datasets.length + " public datasets of real attack telemetry (" + fmt(s.events) + " events) are pulled from Splunk's attack_data and committed unmodified with their Apache-2.0 license, so every result can be reproduced offline.",
+     [["The data", () => go("data")]], [["sources.yml", "simulations/public_datasets/sources.yml"], ["raw data", "data/raw/splunk_attack_data/NOTICE"]]],
+    ["3", "Labeling (ground truth)",
+     "Every event is labeled attack or normal from the dataset's own documentation (attacker IP, attacker account, documented test user), never from the fields the rules check. Result: " + fmt(s.malicious) + " attack and " + fmt(s.benign) + " normal events, with unclear events excluded rather than guessed.",
+     [["See the evidence per dataset", () => go("data")]], [["generate.py", "simulations/public_datasets/generate.py"]]],
+    ["4", "Detection engineering",
+     s.rules + " Sigma rules: single-event rules, count and distinct-value correlations, and a cross-source temporal rule that links a stolen session to data access. Each has a KQL version for Microsoft Sentinel.",
+     [["Read the rules", () => go("rules")]], [["detections/", "detections"], ["Rule write-ups", "docs/03-detections.md"]]],
+    ["5", "Validation (tests in CI)",
+     "200+ automated tests run on every push: each rule must fire on its attack, leave no unexplained false positives, and never read the answer key. CI also fails if the published results go stale.",
+     [], [["CI runs", "https://github.com/abayate/identity-to-data-lab/actions"], ["test_detections.py", "tests/test_detections.py"]]],
+    ["6", "Tuning",
+     key ? "The access-key rule also fired on 28 real admin actions (" + pct(key.stats.fp_rate) + " false-positive rate). Rather than weakening it, one documented known-benign pattern auto-closes the approved admin workflow: " + pct(key.stats.fp_rate_after_triage) + " after triage, and zero real attacks suppressed (enforced by a test)." : "Known-benign patterns with written reasons.",
+     [["See the tuned alerts", () => go("queue", { ruleFilter: key ? key.key : null })]], [["known_benign.yml", "harness/known_benign.yml"]]],
+    ["7", "Deployment path",
+     "The same rules deploy to a real Entra ID tenant (Sentinel analytics rules from the KQL) and a real AWS account (CloudTrail + GuardDuty, with Stratus Red Team for live validation). A GuardDuty vs. custom-rule comparison shows where each wins.",
+     [], [["Go-live guide", "docs/05-go-live.md"], ["GuardDuty comparison", "docs/03-detections.md#guardduty-vs-custom-rules"]]],
+    ["8", "Operations (triage)",
+     "Every alert lands in an analyst queue with investigation context, e.g. \"this IP was never seen for this user\". " + fmt(s.alerts) + " alerts raised; " + fmt(s.auto_closed) + " auto-closed with written reasons; " + fmt(s.open) + " left for a human.",
+     [["Work the queue", () => go("queue")], ["Replay an attack", () => go("replay")]], [["enrich.py", "harness/enrich.py"]]],
+    ["9", "Community contribution",
+     "The strongest rule with no existing equivalent was reformatted to SigmaHQ's conventions, passed SigmaHQ's own validators, and was submitted upstream to the main public Sigma rule repository.",
+     [], [["SigmaHQ PR #6501", "https://github.com/SigmaHQ/sigma/pull/6501"], ["upstream/", "upstream/sigmahq/README.md"]]],
+    ["10", "Report & lessons",
+     "Results, decisions, what went wrong and what's next, written up the way a detection team closes out a project.",
+     [], [["Findings report", "docs/06-findings-report.md"]]],
+  ];
+  const link = ([label, target]) => el("a", { class: "btn small", href: target.startsWith("http") ? target : REPO + target, target: "_blank", rel: "noopener" }, label + " ↗");
+  return el("div", {},
+    el("h2", {}, "The detection lifecycle, end to end"),
+    el("p", { class: "lead" }, "Detection engineering is a cycle, not a script: find the threat, get data, write the detection, prove it, tune it, ship it, operate it, share it, learn. This project runs every stage on real attack telemetry. Each card links to the actual artifact."),
+    el("div", { class: "grid" }, stages.map(([n, title, text, actions, links]) =>
+      el("div", { class: "card", style: "display:grid;grid-template-columns:44px 1fr;gap:12px" },
+        el("div", { style: "width:36px;height:36px;border-radius:50%;background:var(--accent-soft);color:var(--accent);display:grid;place-items:center;font-weight:700" }, n),
+        el("div", {},
+          el("b", {}, title),
+          el("p", { class: "small", style: "margin:4px 0 8px" }, text),
+          el("div", { class: "row" },
+            actions.map(([label, fn]) => el("button", { class: "btn small", onclick: fn }, label)),
+            links.map(link)))))));
+}
+
+// ---------------------------------------------------------------------------
+// Attack replay
+// ---------------------------------------------------------------------------
+function stopPlay() { if (state.play) { clearInterval(state.play); state.play = null; } }
+
+function viewReplay() {
+  const ds = D.datasets.find(d => d.name === state.dataset) || D.datasets[0];
+  const idx = eventsByDataset[ds.name] || [];
+  const mal = idx.filter(i => D.events[i].label === "malicious").length;
+  const shown = state.shown === null ? idx.length : state.shown;
+  const visible = new Set(idx.slice(0, shown));
+  const dsAlerts = D.alerts.filter(a => a.events.some(i => D.events[i].ds === ds.name));
+
+  const picker = el("div", { class: "row", style: "margin-bottom:10px" }, D.datasets.map(d =>
+    el("span", { class: "chip click" + (d.name === ds.name ? " on" : ""), onclick: () => go("replay", { dataset: d.name, event: null, shown: null }) },
+       d.technique + " · " + d.scenario.replaceAll("_", " "))));
+
+  const controls = el("div", { class: "row" },
+    el("button", { class: "btn primary", onclick: () => startPlay(idx) }, state.play ? "⏸ Pause" : (shown < idx.length ? "▶ Play" : "▶ Replay from start")),
+    el("button", { class: "btn", onclick: () => { stopPlay(); state.shown = Math.min(idx.length, (state.shown ?? 0) + 1); render(); } }, "⏭ Step"),
+    el("button", { class: "btn", onclick: () => { stopPlay(); state.shown = null; render(); } }, "Show all"),
+    el("span", { class: "small muted" }, `event ${fmt(shown)} of ${fmt(idx.length)} · ${fmt(dsAlerts.length)} alert(s) in this dataset`));
+
+  const feed = el("div", { class: "feed card" });
+  const fired = new Set();
+  const lines = [];
+  for (const i of idx.slice(0, shown)) {
+    const e = D.events[i];
+    lines.push(el("div", { onclick: () => { state.event = i; render(); }, style: "cursor:pointer" },
+      el("span", { class: "muted mono" }, time(e.t) + "  "), e.who + " · " + e.what + (e.where ? " · " + e.where : "")));
+    for (const a of dsAlerts) if (a.trigger === i && !fired.has(a.id)) {
+      fired.add(a.id);
+      lines.push(el("div", { class: "alert" + (a.status === "open" ? "" : " closed"), onclick: () => go("queue", { ruleFilter: a.rule }) },
+        (a.status === "open" ? "🚨 ALERT: " : "🧹 auto-closed: ") + ruleByKey[a.rule].title, " ", truthBadge(a),
+        el("div", { class: "small", style: "font-weight:400" }, a.status === "open" ? a.why : a.reason)));
+    }
+  }
+  feed.replaceChildren(...lines.reverse());
+  if (!lines.length) feed.append(el("div", { class: "empty" }, "Press ▶ Play to stream this dataset's events through the rules."));
+
+  const table = el("table", {},
+    el("thead", {}, el("tr", {}, ["Time (UTC)", "Who", "What", "From", "Alerts", state.answerKey ? "Truth" : null].filter(Boolean).map(h => el("th", {}, h)))),
+    el("tbody", {}, idx.map(i => {
+      const e = D.events[i], alerts = alertsByEvent[i] || [];
+      return el("tr", { class: (state.event === i ? "sel " : "") + (visible.has(i) ? "" : "dim"), onclick: () => { state.event = i; render(); } },
+        el("td", { class: "mono" }, time(e.t)), el("td", {}, e.who), el("td", {}, e.what), el("td", { class: "mono" }, e.where),
+        el("td", {}, alerts.length ? alerts.map(a => statusBadge(a.status)) : el("span", { class: "muted" }, "-")),
+        state.answerKey ? el("td", {}, labelBadge(e.label)) : null);
+    })));
+
+  return el("div", {},
+    el("h2", {}, "Attack replay"),
+    el("p", { class: "lead" }, "Pick a real attack dataset, press play, and watch its events stream through the detection rules. Click any event to see exactly which rule logic matched it, field by field."),
+    picker,
+    el("div", { class: "card", style: "margin-bottom:12px" },
+      el("div", { class: "row" }, el("b", {}, ds.name.replaceAll("_", " ")), el("span", { class: "chip" }, ds.technique),
+         ds.related.map(t => el("span", { class: "chip" }, t)),
+         el("span", { class: "small muted" }, `${fmt(idx.length)} events · ${fmt(mal)} attack · ${fmt(idx.length - mal)} normal`),
+         el("a", { href: ds.source, target: "_blank", rel: "noopener", class: "small" }, "source dataset ↗")),
+      el("p", { class: "small", style: "margin:6px 0 0" }, ds.description),
+      el("details", { class: "small", style: "margin-top:6px" }, el("summary", {}, "How each event was labeled (evidence)"), el("p", {}, ds.evidence))),
+    el("div", { class: "split" },
+      el("div", {},
+        el("div", { class: "card" }, controls, timeline(idx, visible, dsAlerts),
+          el("div", { class: "legend" },
+            el("span", {}, el("i", { class: "dot", style: "background:var(--bad)" }), state.answerKey ? "attack event" : "event"),
+            state.answerKey ? el("span", {}, el("i", { class: "dot", style: "background:var(--good)" }), "normal event") : null,
+            el("span", {}, "▲ alert fired (orange = open, grey = auto-closed)"))),
+        el("h3", {}, "Live detection feed"), feed,
+        el("h3", {}, "All events in this dataset"), el("div", { class: "scroll" }, table)),
+      el("div", { class: "card inspector" }, inspector())));
+}
+
+function startPlay(idx) {
+  if (state.play) { stopPlay(); render(); return; }
+  if (state.shown === null || state.shown >= idx.length) state.shown = 0;
+  const step = Math.max(1, Math.ceil(idx.length / 120));  // big datasets play in ~120 ticks
+  state.play = setInterval(() => {
+    state.shown = Math.min(idx.length, state.shown + step);
+    if (state.shown >= idx.length) stopPlay();
+    render();
+  }, 220);
+  render();
+}
+
+function timeline(idx, visible, alerts) {
+  const W = 1000, H = 150, pad = 18, logs = [...new Set(idx.map(i => D.events[i].log))];
+  const svg = svgEl("svg", { viewBox: `0 0 ${W} ${H}`, class: "timeline", role: "img", "aria-label": "Event timeline" });
+  const x = k => pad + (idx.length <= 1 ? 0 : k * (W - 2 * pad) / (idx.length - 1));
+  const laneY = l => 40 + (logs.indexOf(l) + 0.5) * ((H - 55) / logs.length);
+  logs.forEach(l => {
+    const t = svgEl("text", { x: 4, y: laneY(l) - 8, "font-size": 11, fill: "var(--muted)" }); t.textContent = l; svg.append(t);
+    svg.append(svgEl("line", { x1: pad, x2: W - pad, y1: laneY(l), y2: laneY(l), stroke: "var(--border)" }));
+  });
+  idx.forEach((i, k) => {
+    if (!visible.has(i)) return;
+    const e = D.events[i];
+    const fill = !state.answerKey ? "var(--neutral)" : e.label === "malicious" ? "var(--bad)" : "var(--good)";
+    const c = svgEl("circle", { cx: x(k), cy: laneY(e.log), r: state.event === i ? 7 : 4.5, fill, "fill-opacity": .85,
+                                stroke: state.event === i ? "var(--text)" : "none", "stroke-width": 2, style: "cursor:pointer" });
+    c.addEventListener("click", () => { state.event = i; render(); });
+    const title = svgEl("title"); title.textContent = `${time(e.t)}  ${e.who} · ${e.what}`; c.append(title);
+    svg.append(c);
+  });
+  for (const a of alerts) {
+    const k = idx.indexOf(a.trigger);
+    if (k < 0 || !visible.has(a.trigger)) continue;
+    const px = x(k);
+    const tri = svgEl("path", { d: `M${px} 30 l-7 -12 h14 z`, fill: a.status === "open" ? "var(--warn)" : "var(--closed)", style: "cursor:pointer" });
+    tri.addEventListener("click", () => go("queue", { ruleFilter: a.rule }));
+    const title = svgEl("title"); title.textContent = ruleByKey[a.rule].title; tri.append(title);
+    svg.append(tri);
+  }
+  return svg;
+}
+
+function inspector() {
+  if (state.event === null || !D.events[state.event]) {
+    return el("div", { class: "empty" }, "👈 Click any event (a dot on the timeline or a table row) to inspect it: the raw log, which rules looked at it, and why they matched or didn't.");
+  }
+  const i = state.event, e = D.events[i];
+  const alerts = alertsByEvent[i] || [];
+  const explains = D.explanations[String(i)] || [];
+  return el("div", {},
+    el("div", { class: "row" }, el("b", {}, "Event inspector"), labelBadge(e.label)),
+    el("div", { class: "small muted mono" }, time(e.t) + " · " + e.log),
+    el("p", { style: "margin:6px 0" }, el("b", {}, e.who), " · " + e.what + (e.where ? " · from " + e.where : "")),
+    state.answerKey ? el("div", { class: "small card", style: "background:var(--panel-2);padding:8px 10px" },
+      "Answer key: ", el("b", {}, e.label), " · scenario ", el("code", {}, e.scenario),
+      el("div", { class: "muted" }, "Labels come from the dataset's documentation (see the evidence above). Rules never see them.")) : null,
+    el("h3", {}, alerts.length ? `Part of ${alerts.length} alert(s)` : "Not part of any alert"),
+    alerts.map(a => el("div", { class: "card", style: "padding:8px 10px;margin-bottom:6px" },
+      el("div", { class: "row" }, statusBadge(a.status), levelBadge(ruleByKey[a.rule].level), truthBadge(a)),
+      el("div", { style: "font-weight:600;margin-top:4px" }, ruleByKey[a.rule].title),
+      el("div", { class: "small" }, a.why),
+      a.status === "open" ? el("div", {}, contextChips(a.context)) : el("div", { class: "small muted" }, "Closed because: " + a.reason))),
+    el("h3", {}, "Why each rule did or didn't match"),
+    explains.length ? explains.map(x => explainCard(x)) :
+      el("p", { class: "small muted" }, "No rule's conditions came close to matching this event."),
+    el("details", {}, el("summary", {}, "Raw log event (exactly as ingested)"), el("pre", {}, JSON.stringify(e.raw, null, 2))));
+}
+
+function explainCard(x) {
+  const rule = ruleByKey[x.rule];
+  return el("details", { class: "card", style: "padding:8px 10px;margin-bottom:6px", open: x.matched },
+    el("summary", {}, x.matched ? el("span", { class: "ok" }, "✔ MATCH  ") : el("span", { class: "no" }, "✘ no match  "), rule.title,
+       x.part ? el("span", { class: "small muted" }, "  (linked rule: " + x.part + ")") : null),
+    el("div", { class: "small", style: "margin:6px 0" }, "condition: ", el("span", { class: "cond" }, x.condition),
+       rule.type !== "single event" ? el("span", { class: "muted" }, "  (base logic of a " + rule.type + " correlation: the alert also needs enough matching events)") : null),
+    Object.entries(x.selections).map(([name, s]) => el("div", { style: "margin-top:6px" },
+      el("div", { class: "small" }, s.matched ? el("span", { class: "ok" }, "✔ ") : el("span", { class: "no" }, "✘ "), el("code", {}, name)),
+      el("table", {}, el("tbody", {}, s.checks.map(c => el("tr", { style: "cursor:default" },
+        el("td", { class: "mono" }, c.field),
+        el("td", { class: "mono small" }, "expects " + JSON.stringify(c.expected)),
+        el("td", { class: "mono small" }, "got " + JSON.stringify(c.actual)),
+        el("td", {}, c.matched ? el("span", { class: "ok" }, "✔") : el("span", { class: "no" }, "✘")))))))));
+}
+
+// ---------------------------------------------------------------------------
+// Analyst queue
+// ---------------------------------------------------------------------------
+function viewQueue() {
+  const rules = [...D.rules].sort((a, b) => (LEVEL_ORDER[a.level] ?? 9) - (LEVEL_ORDER[b.level] ?? 9));
+  const filtered = state.ruleFilter ? rules.filter(r => r.key === state.ruleFilter) : rules;
+  const s = D.summary;
+  return el("div", {},
+    el("h2", {}, "Analyst queue"),
+    el("p", { class: "lead" }, "What a SOC analyst would receive. Each open alert carries investigation context from the triage layer. " +
+      "Auto-closed alerts show the documented known-benign pattern that closed them. Turn the answer key off (top right) to triage blind, then turn it back on to check yourself."),
+    el("div", { class: "grid kpis", style: "margin-bottom:12px" },
+      [[fmt(s.alerts), "alerts raised"], [fmt(s.open), "left open for an analyst"], [fmt(s.auto_closed), "auto-closed by documented triage"],
+       [fmt(D.alerts.filter(a => a.status === "auto_closed" && a.truth === "true_positive").length), "real attacks hidden by auto-close (must be 0)"]]
+        .map(([n, l]) => el("div", { class: "card kpi" }, el("div", { class: "n" }, n), el("div", { class: "l" }, l)))),
+    el("div", { class: "row", style: "margin-bottom:10px" },
+      el("span", { class: "small muted" }, "Filter:"),
+      el("span", { class: "chip click" + (!state.ruleFilter ? " on" : ""), onclick: () => go("queue", { ruleFilter: null }) }, "all rules"),
+      rules.map(r => el("span", { class: "chip click" + (state.ruleFilter === r.key ? " on" : ""), onclick: () => go("queue", { ruleFilter: r.key }) }, r.title))),
+    filtered.map(r => queueSection(r)));
+}
+
+function queueSection(rule) {
+  const alerts = D.alerts.filter(a => a.rule === rule.key);
+  const open = alerts.filter(a => a.status === "open"), closed = alerts.filter(a => a.status !== "open");
+  const many = open.length > 6 && !state.ruleFilter;
+  const reasons = {};
+  for (const a of closed) (reasons[a.reason] ||= []).push(a);
+  return el("div", { class: "card", style: "margin-bottom:12px" },
+    el("div", { class: "row" }, levelBadge(rule.level), el("b", {}, rule.title),
+       el("span", { class: "small muted" }, `${open.length} open · ${closed.length} auto-closed`),
+       el("button", { class: "btn small", onclick: () => go("rules", { techFilter: null, ruleOpen: rule.key }) }, "rule logic")),
+    many ? el("p", { class: "small muted" }, `${open.length} alerts (one per event). Showing the first 3. Filter to this rule to see all.`) : null,
+    (many ? open.slice(0, 3) : open).map(a => alertCard(a)),
+    Object.entries(reasons).map(([reason, list]) => el("details", { style: "margin-top:8px" },
+      el("summary", {}, `🧹 ${list.length} auto-closed: `, el("b", {}, reason.split(":")[0])),
+      el("p", { class: "small" }, reason.split(":").slice(1).join(":").trim()),
+      list.map(a => alertCard(a)))));
+}
+
+function alertCard(a) {
+  const first = D.events[a.events[0]], last = D.events[a.events[a.events.length - 1]];
+  return el("div", { class: "card", style: "background:var(--panel-2);margin-top:8px;padding:10px 12px" },
+    el("div", { class: "row" }, statusBadge(a.status), truthBadge(a),
+       el("span", { class: "small mono muted" }, time(first.t) + (a.events.length > 1 ? " → " + time(last.t) : "")),
+       el("span", { class: "small muted" }, a.events.length + " event(s)")),
+    el("div", { style: "margin:4px 0" }, a.why),
+    a.status === "open" ? el("div", {}, contextChips(a.context)) : null,
+    el("div", { class: "row", style: "margin-top:6px" },
+      el("button", { class: "btn", onclick: () => openEvent(a.trigger) }, "🔍 Inspect the triggering event"),
+      el("span", { class: "small muted" }, D.events[a.trigger].who + " · " + D.events[a.trigger].what)));
+}
+
+// ---------------------------------------------------------------------------
+// Rules
+// ---------------------------------------------------------------------------
+function viewRules() {
+  const list = state.techFilter ? D.rules.filter(r => r.techniques.includes(state.techFilter)) : D.rules;
+  return el("div", {},
+    el("h2", {}, "Detection rules"),
+    el("p", { class: "lead" }, "Every rule is a Sigma file in the repo, tested in CI: it must fire on the attack it was written for and leave no unexplained false positives open. Each one also has a KQL version for Microsoft Sentinel."),
+    state.techFilter ? el("div", { class: "row", style: "margin-bottom:10px" }, "Showing rules for ", el("span", { class: "chip on" }, state.techFilter),
+      el("button", { class: "btn", onclick: () => go("rules", { techFilter: null }) }, "show all")) : null,
+    el("div", { class: "grid" }, list.map(r => ruleCard(r))));
+}
+
+function ruleCard(r) {
+  const body = el("div", {});
+  const tabs = el("div", { class: "tabs2" });
+  const show = which => {
+    tabs.querySelectorAll("button").forEach(b => b.classList.toggle("on", b.dataset.k === which));
+    body.replaceChildren(which === "sigma" ? el("pre", {}, r.sigma)
+      : which === "kql" ? el("pre", {}, r.kql || "(no KQL section found)")
+      : el("ul", { class: "small" }, r.falsepositives.map(f => el("li", {}, f))));
+  };
+  for (const [k, label] of [["sigma", "Sigma rule"], ["kql", "KQL (Sentinel)"], ["fp", "Expected false positives"]])
+    tabs.append(el("button", { "data-k": k, onclick: () => show(k) }, label));
+  show("sigma");
+  const st = r.stats;
+  return el("div", { class: "card" },
+    el("div", { class: "row" }, levelBadge(r.level), el("b", {}, r.title), el("span", { class: "chip" }, r.type),
+       r.techniques.map(t => el("span", { class: "chip" }, t)), el("code", { class: "small muted" }, r.key)),
+    el("p", { class: "small", style: "margin:6px 0" }, r.description),
+    el("div", { class: "row small" },
+      el("span", {}, "checked ", el("b", {}, fmt(st.events_checked)), " events"),
+      el("span", {}, "· ", el("b", {}, fmt(st.hits)), " alerts"),
+      el("span", { class: "ok" }, "· " + fmt(st.true_positives) + " true positive"),
+      el("span", { class: st.false_positives ? "no" : "muted" }, "· " + fmt(st.false_positives) + " false positive"),
+      st.auto_closed ? el("span", {}, "· " + fmt(st.auto_closed) + " auto-closed") : null,
+      st.false_positives ? el("span", {}, "· FP rate " + pct(st.fp_rate) + " → " + pct(st.fp_rate_after_triage) + " after triage") : null,
+      el("button", { class: "btn", onclick: () => go("queue", { ruleFilter: r.key }) }, "see alerts")),
+    tabs, body);
+}
+
+// ---------------------------------------------------------------------------
+// Coverage
+// ---------------------------------------------------------------------------
+function viewCoverage() {
+  return el("div", {},
+    el("h2", {}, "MITRE ATT&CK coverage"),
+    el("p", { class: "lead" }, "A technique counts as covered only when a rule tagged with it actually caught attack events in the replay. Writing a rule isn't enough. Grey gaps are steps these log sources can't see, and each one says why."),
+    chainLanes(),
+    el("h3", {}, "Detail"),
+    el("div", { class: "scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, ["Technique", "Name", "Branch", "Status", "Rules / why not"].map(h => el("th", {}, h)))),
+      el("tbody", {}, D.coverage.map(c => el("tr", { onclick: () => c.status === "tested" && go("rules", { techFilter: c.id }) },
+        el("td", { class: "mono" }, c.id), el("td", {}, c.name), el("td", {}, c.branch),
+        el("td", {}, el("span", { class: "badge b-" + c.status }, c.status === "tested" ? "caught" : "gap")),
+        el("td", { class: "small" }, c.status === "gap" ? (GAP_REASONS[c.id] || "-") : c.rules.join(" · "))))))));
+}
+
+// ---------------------------------------------------------------------------
+// The data
+// ---------------------------------------------------------------------------
+function viewData() {
+  const counts = {};
+  D.events.forEach(e => { const c = (counts[e.ds] ||= { malicious: 0, benign: 0 }); c[e.label] += 1; });
+  return el("div", {},
+    el("h2", {}, "Where the data comes from"),
+    el("p", { class: "lead" }, "Real telemetry published by Splunk's Threat Research Team (splunk/attack_data, Apache-2.0), captured while they ran real tools in test tenants. " +
+      "Each event is labeled individually from the dataset's own documentation, never from the fields the rules check, so no rule can score well by reading the answer key."),
+    el("div", { class: "scroll" }, el("table", {},
+      el("thead", {}, el("tr", {}, ["Dataset", "Technique", "Attack", "Normal", "What it is", "Labeling evidence"].map(h => el("th", {}, h)))),
+      el("tbody", {}, D.datasets.map(d => el("tr", { onclick: () => go("replay", { dataset: d.name, event: null, shown: null }) },
+        el("td", {}, el("a", { href: d.source, target: "_blank", rel: "noopener", onclick: ev => ev.stopPropagation() }, d.name)),
+        el("td", { class: "mono" }, d.technique),
+        el("td", {}, fmt((counts[d.name] || {}).malicious || 0)), el("td", {}, fmt((counts[d.name] || {}).benign || 0)),
+        el("td", { class: "small" }, d.description), el("td", { class: "small muted" }, d.evidence)))))),
+    el("h3", {}, "Honest limitations"),
+    el("ul", {},
+      el("li", {}, `Only ${fmt(D.summary.benign)} benign events exist in the public data, so "0 false positives" means none on the data available, not none in production. Each rule documents its expected production noise.`),
+      el("li", {}, "Datasets come from different test tenants and runs, so the full identity → data chain exists end to end only in the Evilginx → mailbox dataset."),
+      el("li", {}, "Correlation trigger points in the replay animation are approximate: they show when the alert's own events first met the rule's threshold.")));
+}
+
+render();
+</script>
+</body>
+</html>

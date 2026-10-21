@@ -296,3 +296,17 @@ def test_fieldref_compares_two_fields_case_insensitively():
     # If the other field is missing, it is not a match (unknown is not "equal").
     missing = {"userIdentity": {}, "requestParameters": {"userName": "bob"}}
     assert not field_matches(missing, "requestParameters.userName|fieldref", "userIdentity.userName")
+
+
+def test_explain_match_shows_each_check(toy_rule):
+    from harness.evaluate import explain_match
+    record = {"IPAddress": "203.0.113.9", "UserPrincipalName": "vpn-svc@contoso.example"}
+    why = explain_match(toy_rule, record)
+    assert why["matched"] is False                       # filtered out by the VPN filter
+    assert why["selections"]["selection"]["matched"] is True
+    assert why["selections"]["filter_known_vpn"]["matched"] is True
+    check = why["selections"]["selection"]["checks"][0]
+    assert check == {"field": "IPAddress|startswith", "expected": "203.0.113.",
+                     "actual": "203.0.113.9", "matched": True}
+    # explain_match must always agree with rule_matches.
+    assert why["matched"] == rule_matches(toy_rule, record)

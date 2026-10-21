@@ -606,3 +606,43 @@ outside review is a good forcing function.
 2. Why does the rule match `"iam:*"` but not `"s3:*"`?
 3. What would a SigmaHQ reviewer likely push back on? (Think: regex on a JSON string, level `high`.)
 4. Why test that the upstream copy behaves exactly like the lab rule?
+
+---
+
+## The interactive dashboard and the findings report
+
+### The 30-second version
+
+> "Numbers in a terminal don't show what a detection pipeline actually does, so I built a
+> dashboard from the real results. You can replay a real attack and watch alerts fire,
+> click any log line to see the rule logic evaluated field by field, and work the analyst
+> queue with the answer key hidden. CI rebuilds it from the data on every push and
+> publishes it to GitHub Pages only after all tests pass."
+
+### Design decisions worth explaining
+
+- **One self-contained HTML file, no framework, no server.** The data is embedded as JSON,
+  so the page works from disk and on GitHub Pages, and there's nothing to maintain.
+- **Security of the dashboard itself.** Log fields are attacker-controlled (user agents,
+  search text, file names). The page only ever inserts data as *text*, never as HTML, and
+  the embedded JSON escapes `</` so a log line can't close the `<script>` block. A test
+  feeds in a `</script><script>alert()` payload and checks it can't break out. That's
+  stored XSS, a real class of bug in SIEM and SOC tooling.
+- **Explanations come from the same engine.** `explain_match()` in `evaluate.py` returns
+  every field check behind a match, and a test proves it always agrees with `rule_matches()`.
+  The dashboard can't show a reason the engine didn't actually use.
+- **The answer-key switch.** It hides the labels so you see what an analyst sees, which
+  makes the gap between "an alert" and "a confirmed attack" obvious.
+
+### The findings report: the bit interviewers like
+
+It lists **every** missed attack event by cause. The biggest group (27 attacker searches
+using ordinary words) is a real gap with a concrete fix (a search-volume rule). Owning
+misses with a plan reads as maturity. Hiding them reads as inexperience.
+
+### Practice questions
+
+1. How does a log line become a dot on the timeline and an entry in the inspector?
+2. Why is the dashboard built by CI instead of committed?
+3. Show me how a malicious log value could attack a SOC dashboard, and how yours prevents it.
+4. Which missed events worry you, and which don't? Why?

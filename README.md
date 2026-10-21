@@ -15,6 +15,19 @@ auto-closes documented false positives and attaches investigation context to the
 > **In one sentence:** write a detection, prove it catches the attack and ignores normal
 > traffic, and automate the triage. That's this repo.
 
+### 👉 [Open the interactive dashboard](https://abayate.github.io/identity-to-data-lab/)
+
+Press ▶ on a real attack and watch its events stream through the rules, click any log
+line to see *why* a rule matched it (field by field), work the analyst queue with the
+answer key hidden, and walk the full detection lifecycle. The dashboard is rebuilt from
+the real data by CI on every push.
+
+📄 **[Read the findings report](docs/06-findings-report.md)** for results, the tuning
+decision, every missed attack event explained, lessons learned, and next steps.
+
+**100% real telemetry:** every event was captured by Splunk's Threat Research Team while real
+attack tools ran against real Microsoft 365 and AWS test tenants. Nothing is simulated.
+
 ---
 
 ## Results at a glance
@@ -24,7 +37,7 @@ auto-closes documented false positives and attaches investigation context to the
 | **Detection rules** | 13 Sigma rules (3 identity, 4 data-layer, 6 AWS), each with KQL for Sentinel |
 | **Attack data** | 1,611 malicious + 59 benign **real events** from [Splunk's attack_data](https://github.com/splunk/attack_data) (Evilginx, TokenTactics, rclone, Atomic Red Team, Stratus Red Team…) |
 | **Whole-chain catch rate** | **97%**: 1,563 of 1,611 malicious events are part of at least one alert |
-| **ATT&CK coverage** | 12 of 15 planned techniques **tested** against real attack data |
+| **ATT&CK coverage** | 11 of 14 planned techniques **tested** against real attack data (the 3 gaps are steps these logs cannot see) |
 | **Auto-triage** | Noisiest rule: **73.7% → 13.2%** false-positive rate, with **zero** real attacks suppressed |
 | **Tests** | 200+ pytest checks in ~2 seconds, run on every push; CI also fails if the committed results go stale |
 | **Upstream** | One rule submitted to [SigmaHQ](https://github.com/SigmaHQ/sigma): [PR #6501](https://github.com/SigmaHQ/sigma/pull/6501), passing SigmaHQ's own validators ([details](upstream/sigmahq/)) |
@@ -218,6 +231,7 @@ pip install -r requirements.txt
 
 pytest -v                          # 200+ tests: every rule vs. real attack data
 python harness/replay.py           # per-rule table + writes reports/
+python harness/replay.py --open    # ...and opens the interactive dashboard in your browser
 python harness/replay.py --regenerate   # rebuild sample logs from raw data first
 ```
 
@@ -240,7 +254,7 @@ Every push runs the same thing in GitHub Actions. Open the **Actions** tab, then
 
 ```
 detections/            13 Sigma rules: entra/, data/, aws/
-harness/               evaluate.py (Sigma engine) · enrich.py (triage) · coverage.py · replay.py
+harness/               evaluate.py (Sigma engine) · enrich.py (triage) · coverage.py · replay.py · dashboard.py
   known_benign.yml     documented auto-close patterns
 simulations/
   public_datasets/     sources.yml (datasets + labeling evidence) · fetch.py · generate.py
@@ -248,7 +262,7 @@ simulations/
   schemas.py           required / optional fields per log type
 data/raw/              unmodified public datasets (+ LICENSE, NOTICE)
 data/sample-logs/      labeled JSONL the rules run against (generated)
-reports/               results, alert queue, ATT&CK coverage (generated)
+reports/               results, alert queue, ATT&CK coverage (generated); dashboard/ is built by CI
 upstream/sigmahq/      rule + PR text prepared for SigmaHQ, validated with their tools
 tests/                 200+ pytest checks
 docs/                  architecture · detections · go-live · interview prep · replication guide
@@ -258,6 +272,8 @@ docs/                  architecture · detections · go-live · interview prep �
 
 | Doc | What's in it |
 |---|---|
+| [**Findings report**](docs/06-findings-report.md) | Results, the tuning decision, every miss explained, lessons, next steps |
+| [**Interactive dashboard**](https://abayate.github.io/identity-to-data-lab/) | Attack replay, rule explanations, analyst queue, lifecycle, coverage |
 | [Architecture](docs/01-architecture.md) | Components, data flow, design decisions |
 | [Detections](docs/03-detections.md) | Every rule: logic, KQL, tuning, results; GuardDuty comparison |
 | [Go-live](docs/05-go-live.md) | Pointing the same rules at a real Entra tenant (Sentinel) and AWS account |

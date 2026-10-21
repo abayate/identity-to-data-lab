@@ -170,3 +170,24 @@ def test_alert_queue_hides_answer_key(toy_lab):
     queue = (toy_lab / "reports" / "alerts.md").read_text(encoding="utf-8")
     assert "Open #1" in queue and "Auto-closed x1: test-scanner" in queue
     assert "lab_label" not in queue and "malicious" not in queue
+
+
+def test_dashboard_is_written_and_embeds_data(toy_lab):
+    run_toy_replay(toy_lab)
+    html = (toy_lab / "reports" / "dashboard" / "index.html").read_text(encoding="utf-8")
+    assert "/*__DASHBOARD_DATA__*/null" not in html          # the data placeholder was filled
+    assert "Toy rule - sign-in from test network" in html
+
+
+def test_dashboard_resists_script_injection_from_logs(toy_lab):
+    # Log fields are attacker-controlled. A value containing "</script>" must not be able
+    # to close the page's data block and run its own code (stored XSS).
+    import json as _json
+    evil = '</script><script>alert("pwned")</script>'
+    with open(toy_lab / "logs" / "entra_signins_toy.jsonl", "a", encoding="utf-8") as handle:
+        handle.write(_json.dumps({"UserPrincipalName": evil, "IPAddress": "203.0.113.66",
+                                  "lab_label": "malicious"}) + "\n")
+    run_toy_replay(toy_lab)
+    html = (toy_lab / "reports" / "dashboard" / "index.html").read_text(encoding="utf-8")
+    assert evil not in html
+    assert html.count("</script>") == 1                      # only the page's own closing tag

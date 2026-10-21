@@ -315,6 +315,34 @@ def condition_matches(condition, selection_results):
 # Whole rules and scoring
 # ---------------------------------------------------------------------------
 
+def explain_match(rule, record):
+    """Explain WHY a rule's detection did or didn't match one record.
+
+    Returns each selection's result, every field check inside it (field, expected value,
+    the record's actual value, matched or not), and the overall condition result. The
+    dashboard uses this to show the rule logic working on a real log line.
+    """
+    detection = rule["detection"]
+    selections = {}
+    for name, selection in detection.items():
+        if name == "condition":
+            continue
+        items = selection if isinstance(selection, list) else [selection]
+        checks = []
+        for item in items:
+            for spec, expected in item.items():
+                checks.append({
+                    "field": spec,
+                    "expected": expected,
+                    "actual": get_field(record, spec.split("|")[0]),
+                    "matched": field_matches(record, spec, expected),
+                })
+        selections[name] = {"matched": selection_matches(record, selection), "checks": checks}
+    matched = condition_matches(detection["condition"],
+                                {name: s["matched"] for name, s in selections.items()})
+    return {"condition": detection["condition"], "selections": selections, "matched": matched}
+
+
 def rule_matches(rule, record):
     """Return True if the rule fires on this single log record."""
     detection = rule["detection"]

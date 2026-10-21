@@ -82,6 +82,11 @@ Loaded 1670 log events and 13 rules.
 Then open `reports/`: `results.md` (this table), `alerts.md` (the analyst queue),
 `coverage.md` and `coverage.svg` (the ATT&CK map).
 
+**The interactive dashboard:** `python harness/replay.py --open` writes
+`reports/dashboard/index.html` and opens it. It's one self-contained file (no server needed).
+The public copy at https://abayate.github.io/identity-to-data-lab/ is rebuilt by CI on every
+push to `main`, and only after all tests pass.
+
 ---
 
 ## 3. Rebuild it from scratch, phase by phase
@@ -194,6 +199,7 @@ Every rule follows the same loop. **Use it to add your own.**
 | `harness/enrich.py` | Auto-close alerts matching `known_benign.yml`; attach "new IP / ASN / country for this user" context |
 | `harness/coverage.py` | ATT&CK map: tested / untested / gap |
 | `harness/replay.py` | Run everything, write `reports/`, post to the GitHub Actions summary |
+| `harness/dashboard.py` + `dashboard_template.html` | Build the interactive dashboard: events, alerts, field-by-field explanations, lifecycle |
 
 ### Phase 6: docs
 
