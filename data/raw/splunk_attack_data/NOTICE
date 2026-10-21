@@ -1,0 +1,10 @@
+The files in this directory are unmodified copies of datasets from the
+Splunk Threat Research Team "attack_data" repository:
+
+    https://github.com/splunk/attack_data
+
+They are licensed under the Apache License, Version 2.0 (see LICENSE in this
+directory). Each <name>.log was downloaded from the path listed for <name> in
+simulations/public_datasets/sources.yml, and <name>.metadata.yml is that
+dataset's upstream description. Converted, labeled versions live in
+data/sample-logs/ and are a derivative work under the same license.

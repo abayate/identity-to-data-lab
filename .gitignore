@@ -8,3 +8,5 @@ htmlcov/
 .env
 *.log
 .DS_Store
+# ...but the committed raw public datasets are .log files and must be kept.
+!data/raw/**/*.log

@@ -283,3 +283,80 @@ count rules.
 2. What's the risk of an over-broad known-benign entry? How would you catch one?
 3. How does `build_context` decide an IP is "new for the user"? What's its weakness on a small dataset?
 4. How does the CI summary page get the table? (Hint: `GITHUB_STEP_SUMMARY`.)
+
+---
+
+## Phase 1 — Telemetry from public attack datasets
+
+### The 30-second version
+
+> "Instead of making up attack logs, I used Splunk's open attack_data repo. It has
+> real Entra and M365 telemetry captured while their research team ran tools like
+> Evilginx and TokenTactics in a test tenant. I wrote a converter that flattens
+> Azure's raw export format into Sentinel's column names and labels every event
+> malicious or benign from documented evidence. A test fails if the committed logs
+> ever drift from what the converter produces."
+
+### Walk me through the pipeline
+
+1. **`sources.yml`** lists each dataset: its URL, the ATT&CK technique, and labeling
+   rules with a written `evidence` paragraph.
+2. **`fetch.py`** downloads the raw files once. They're committed, so CI never needs
+   the internet. The upstream repo uses Git LFS, so `fetch.py` refuses to save an
+   LFS "pointer stub" by mistake.
+3. **`generate.py`** labels each raw event, converts it to Sentinel's schema, and
+   writes `data/sample-logs/`, plus a README of counts per dataset.
+
+### Why label each event instead of each file?
+
+Each file mixes the attack with ordinary activity. In the device-code dataset, the
+victim browses the portal normally from one address while the device-login that
+hands over the token comes from another. Labeling the whole file malicious would
+make normal behavior look like an attack, and your FP numbers would be meaningless.
+
+### What's the circular-labeling trap?
+
+If I labeled "malicious = AuthenticationProtocol is deviceCode" and then wrote a rule
+"fire when AuthenticationProtocol is deviceCode", the rule would score 100% by
+definition. So labels come from the dataset's documentation (which IP / account the
+attack used), never from the fields the rules test.
+
+### Why "exclude" some events?
+
+Four service-principal sign-ins in the device-code file aren't described by the
+dataset author. Guessing a label would put made-up ground truth into the scoring.
+Dropping them, and counting how many were dropped, is the honest choice.
+
+### What surprised you about real data? (good question to have an answer for)
+
+- Timestamps came in three formats, including 7 fractional digits that Python can't parse.
+- Required fields weren't always there. Service-principal sign-ins have no user, so
+  the schema split into required and optional fields.
+- One published line was truncated mid-JSON. The converter skips and counts it
+  instead of crashing.
+- The raw export nests fields under `properties` in camelCase, but Sentinel's
+  `SigninLogs` uses flat PascalCase columns, so rules written against one won't
+  match the other.
+
+### The limitation to admit up front
+
+Only **21 benign events** survive labeling. That's enough to prove the pipeline,
+but not to claim a meaningful false-positive rate. The fix is a benign baseline
+exported from your own test tenant (see `docs/05-go-live.md`). Saying this before
+an interviewer asks is a strength.
+
+### Exercise: write the threat model yourself (`docs/02-threat-model.md`)
+
+Open `simulations/public_datasets/sources.yml` and, for each dataset, answer in
+your own words:
+1. What does the attacker have before this step, and what do they have after?
+2. Which ATT&CK technique is it, and why that one and not a neighbor?
+3. Which log table records it, and which two or three fields give it away?
+4. What would a defender lose if this step went undetected?
+
+### Practice questions
+
+1. Why commit the raw data *and* the converted data?
+2. What does `test_committed_sample_logs_are_up_to_date` protect against?
+3. Why does `.gitattributes` force LF line endings for `data/sample-logs/`?
+4. Why are only 21 benign events a problem, and how would you fix it?

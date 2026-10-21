@@ -1,8 +1,8 @@
-"""Checks that committed Entra sign-in sample logs are valid and follow the schema.
+"""Checks that every committed sample log is valid and follows its schema.
 
-Sample logs are JSON Lines files: one JSON object (one sign-in event) per line.
-Entra sign-in files are named `entra_signins*.jsonl` inside data/sample-logs/.
-Other log types (M365 file access, CloudTrail) get their own checks in later phases.
+Sample logs are JSON Lines files (one JSON object per line) in data/sample-logs/.
+The file name prefix says which schema applies: entra_signins*, entra_audit*,
+m365_audit* (see simulations/schemas.py).
 """
 
 import json
@@ -11,10 +11,18 @@ from pathlib import Path
 
 import pytest
 
-from simulations.entra_aitm.schema import ALLOWED_LABELS, REQUIRED_FIELDS
+from simulations.schemas import ALLOWED_LABELS, SCHEMAS
 
 SAMPLE_LOG_DIR = Path(__file__).resolve().parent.parent / "data" / "sample-logs"
-SIGNIN_FILES = sorted(SAMPLE_LOG_DIR.glob("entra_signins*.jsonl"))
+ALL_FILES = sorted(SAMPLE_LOG_DIR.glob("*.jsonl"))
+
+
+def schema_for(path):
+    """Return (required, optional) for a sample-log file, based on its name prefix."""
+    for prefix, schema in SCHEMAS.items():
+        if path.name.startswith(prefix):
+            return schema
+    raise AssertionError(f"{path.name} has no schema; name it with one of {sorted(SCHEMAS)}")
 
 
 def load_records(path):
@@ -27,14 +35,17 @@ def load_records(path):
     return records
 
 
-def check_record(record):
-    """Return a list of problems with one sign-in record (empty list = valid)."""
+def check_record(record, required, optional):
+    """Return a list of problems with one record (empty list = valid)."""
     problems = []
-    for field, expected_type in REQUIRED_FIELDS.items():
-        if field not in record:
+    for field, expected_type in required.items():
+        if record.get(field) is None:
             problems.append(f"missing field {field}")
         elif not isinstance(record[field], expected_type):
             problems.append(f"{field} should be {expected_type.__name__}")
+    for field, expected_type in optional.items():
+        if record.get(field) is not None and not isinstance(record[field], expected_type):
+            problems.append(f"{field} should be {expected_type.__name__} or null")
     if record.get("lab_label") not in ALLOWED_LABELS:
         problems.append(f"lab_label must be one of {sorted(ALLOWED_LABELS)}")
     try:
@@ -47,51 +58,64 @@ def check_record(record):
 
 # --- Tests for the checker itself, so we know it catches bad records. ---
 
+TOY_REQUIRED = {"TimeGenerated": str, "IPAddress": str, "lab_label": str}
+TOY_OPTIONAL = {"AutonomousSystemNumber": int}
+
+
 def make_valid_record():
-    """A hand-written record that satisfies the schema, used as a known-good baseline."""
-    sample_values = {str: "x", int: 1}
-    record = {field: sample_values[kind] for field, kind in REQUIRED_FIELDS.items()}
-    record["TimeGenerated"] = "2026-10-01T14:03:22Z"
-    record["lab_label"] = "benign"
-    return record
+    return {"TimeGenerated": "2026-10-01T14:03:22Z", "IPAddress": "203.0.113.7", "lab_label": "benign"}
 
 
 def test_checker_accepts_valid_record():
-    assert check_record(make_valid_record()) == []
+    assert check_record(make_valid_record(), TOY_REQUIRED, TOY_OPTIONAL) == []
 
 
 def test_checker_rejects_missing_field():
     record = make_valid_record()
     del record["IPAddress"]
-    assert "missing field IPAddress" in check_record(record)
+    assert "missing field IPAddress" in check_record(record, TOY_REQUIRED, TOY_OPTIONAL)
+
+
+def test_checker_allows_null_optional_but_not_wrong_type():
+    record = make_valid_record()
+    record["AutonomousSystemNumber"] = None
+    assert check_record(record, TOY_REQUIRED, TOY_OPTIONAL) == []
+    record["AutonomousSystemNumber"] = "64500"
+    assert check_record(record, TOY_REQUIRED, TOY_OPTIONAL)
 
 
 def test_checker_rejects_bad_label():
     record = make_valid_record()
     record["lab_label"] = "suspicious"
-    assert check_record(record)
+    assert check_record(record, TOY_REQUIRED, TOY_OPTIONAL)
 
 
 def test_checker_rejects_bad_timestamp():
     record = make_valid_record()
     record["TimeGenerated"] = "yesterday"
-    assert check_record(record)
+    assert check_record(record, TOY_REQUIRED, TOY_OPTIONAL)
 
 
 # --- Tests over the real committed sample logs. ---
 
-@pytest.mark.skipif(not SIGNIN_FILES, reason="no entra_signins*.jsonl committed yet")
-@pytest.mark.parametrize("path", SIGNIN_FILES, ids=lambda p: p.name)
-def test_signin_file_is_valid(path):
+def test_sample_logs_exist():
+    assert ALL_FILES, "no sample logs; run python -m simulations.public_datasets.generate"
+
+
+@pytest.mark.parametrize("path", ALL_FILES, ids=lambda p: p.name)
+def test_sample_log_file_is_valid(path):
+    required, optional = schema_for(path)
     records = load_records(path)
     assert records, f"{path.name} is empty"
     for line_number, record in records:
-        problems = check_record(record)
+        problems = check_record(record, required, optional)
         assert not problems, f"{path.name} line {line_number}: {problems}"
 
 
-@pytest.mark.skipif(not SIGNIN_FILES, reason="no entra_signins*.jsonl committed yet")
-def test_signin_logs_contain_both_labels():
+@pytest.mark.parametrize("prefix", ["entra_signins", "m365_audit"])
+def test_log_type_has_both_labels(prefix):
     # Without both kinds we could not measure a true-positive or a false-positive rate.
-    labels = {record["lab_label"] for path in SIGNIN_FILES for _, record in load_records(path)}
+    labels = {record["lab_label"]
+              for path in ALL_FILES if path.name.startswith(prefix)
+              for _, record in load_records(path)}
     assert labels == ALLOWED_LABELS

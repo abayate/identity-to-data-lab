@@ -1,0 +1,119 @@
+# Public datasets this lab replays, and how each event in them is labeled.
+#
+# Source: Splunk Threat Research Team "attack_data" repository (Apache-2.0)
+#   https://github.com/splunk/attack_data
+# Each dataset was captured in Splunk's "attack_range" test tenant while a named
+# open-source tool was used to perform one technique. Splunk replaced tenant
+# details (tenant ids, user names, IPs) before publishing.
+#
+# LABELING
+# A dataset file mixes the attack with ordinary background activity, so every
+# event is labeled individually:
+#   default_label   the label for events no rule below matches
+#   malicious_when  selections (Sigma syntax, matched on the RAW record) that make an event malicious
+#   benign_when     selections that make an event benign
+#   exclude_when    selections for events that cannot be attributed confidently; they are dropped
+# Every decision cites `evidence`. Labels come from the dataset's own description
+# and from which identities / IPs the attack used, NEVER from the field values the
+# detection rules test. If labels and rules used the same logic, a rule would score
+# 100% by definition and prove nothing. tests/test_detections.py enforces that.
+
+base_url: https://media.githubusercontent.com/media/splunk/attack_data/master/datasets/attack_techniques
+metadata_base_url: https://raw.githubusercontent.com/splunk/attack_data/master/datasets/attack_techniques
+license_url: https://raw.githubusercontent.com/splunk/attack_data/master/LICENSE
+
+datasets:
+  - name: aitm_session_cookie_replay
+    technique: T1185
+    related_techniques: [T1566, T1539, T1078.004]
+    scenario: aitm_cookie_replay
+    path: T1185/azure_ad_concurrent_sessions_from_different_ips/azuread.log
+    metadata: T1185/azure_ad_concurrent_sessions_from_different_ips/azure_ad_concurrent_sessions_from_different_ips.yml
+    format: azure_monitor
+    default_label: malicious
+    evidence: >
+      Dataset description: "Used Evilnginx2 to phish an Azure AD user and steal session
+      cookies. Then, imported the stolen session cookies into a different browser to access
+      Azure AD resources from a different location and source ip." With an
+      adversary-in-the-middle proxy, the victim's login reaches Entra through the attacker's
+      proxy, so both source IPs in this file (the proxy and the replaying browser) are
+      attacker infrastructure. Every event is part of the attack.
+
+  - name: aitm_session_cookie_replay_m365
+    technique: T1185
+    related_techniques: [T1566, T1539, T1078.004]
+    scenario: aitm_cookie_replay
+    path: T1185/o365_concurrent_sessions_from_different_ips/o365_concurrent_sessions_from_different_ips.log
+    metadata: T1185/o365_concurrent_sessions_from_different_ips/o365_concurrent_sessions_from_different_ips.yml
+    format: mixed
+    default_label: malicious
+    evidence: >
+      Dataset description: "Used Evilnginx3 to phish an O365 user and steal session cookies.
+      Then, imported the stolen session cookies into a different browser to access M365
+      resources from a different location and source ip." Same reasoning as above: every
+      event belongs to the phish-and-replay sequence.
+
+  - name: device_code_phishing
+    technique: T1528
+    related_techniques: [T1566]
+    scenario: device_code_phishing
+    path: T1528/device_code_authentication/azure-audit.log
+    metadata: T1528/device_code_authentication/device_code_authentication.yml
+    format: azure_monitor
+    default_label: benign
+    malicious_when:
+      - properties.ipAddress: 4.4.4.4
+    exclude_when:
+      - category: ServicePrincipalSignInLogs
+    evidence: >
+      Dataset description: "Leveraged TokenTactics to perform device code phishing against an
+      azure ad account". The events from 4.4.4.4 are the device-login session that grants the
+      phished code (MFA / confirmation interrupts, then the token issue), so they are the
+      attack. The same user's earlier sign-ins from a different IPv6 address are ordinary
+      portal use and are labeled benign. The service-principal sign-ins in the file are not
+      described by the dataset and cannot be attributed to either side, so they are excluded.
+
+  - name: oauth_consent_grant
+    technique: T1528
+    related_techniques: [T1098.003]
+    scenario: oauth_consent_grant
+    path: T1528/azure_ad_user_consent_granted/azure_ad_user_consent_granted.log
+    metadata: T1528/azure_ad_user_consent_granted/azure_ad_user_consent_granted.yml
+    format: azure_monitor
+    default_label: malicious
+    benign_when:
+      - properties.initiatedBy.app.displayName: Azure MFA StrongAuthenticationService
+    evidence: >
+      Dataset description: "Used 365-stealer and a multi-tenant application registration to
+      simulate a consent grant attack. Simulated a user granting consent." The sign-ins to the
+      attacker's app and the consent / permission-grant audit events are the attack. The one
+      "Update user" event written by the MFA service is the user's routine MFA registration
+      and is labeled benign.
+
+  - name: sharepoint_mass_download
+    technique: T1567
+    related_techniques: [T1530]
+    scenario: sharepoint_exfiltration
+    path: T1567/o365_sus_file_activity/o365_sus_file_activity.log
+    metadata: T1567/o365_sus_file_activity/o365_sus_file_activity.yml
+    format: o365_management
+    default_label: malicious
+    benign_when:
+      - UserId|startswith: normie
+    evidence: >
+      Dataset description: "Sample of events when an actor attempts to exfiltrate data from
+      sharepoint using various methods." The dataset author named the actors: four
+      attacker accounts (browser access, zip download, sync client, rclone) and twelve
+      "normie" accounts that each open one file. The normie accounts are the benign baseline.
+
+  - name: sharepoint_sensitive_search
+    technique: T1213.002
+    related_techniques: [T1530]
+    scenario: sharepoint_recon
+    path: T1213.002/o365_sus_sharepoint_search/o365_sus_sharepoint_search.log
+    metadata: T1213.002/o365_sus_sharepoint_search/o365_sus_sharepoint_search.yml
+    format: o365_management
+    default_label: malicious
+    evidence: >
+      Dataset description: "Sample of events when Sharepoint is searched for a sensitive term
+      / or high rate of searching." All events come from the dataset's attacker accounts.

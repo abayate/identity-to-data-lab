@@ -1,0 +1,14 @@
+author: Steven Dick
+id: 722e396e-9e74-4516-882d-0fc94f5d2b33
+date: '2024-12-19'
+description: Sample of events when Sharepoint is searched for a sensitive term / or
+  high rate of searching.
+environment: attack_range
+directory: o365_sus_sharepoint_search
+mitre_technique:
+- T1213.002
+datasets:
+- name: o365_sus_sharepoint_search
+  path: /datasets/attack_techniques/T1213.002/o365_sus_sharepoint_search/o365_sus_sharepoint_search.log
+  sourcetype: o365:management:activity
+  source: o365

@@ -1,0 +1,5 @@
+# Generated sample logs must be byte-identical on every OS, or the
+# "committed sample logs are up to date" test fails on a Windows checkout.
+data/sample-logs/** text eol=lf
+# Raw public datasets are stored exactly as downloaded.
+data/raw/** -text
