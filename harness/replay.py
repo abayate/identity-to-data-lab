@@ -108,7 +108,7 @@ def evaluate_all(rules, logs, known_benign):
         )
         results.append({
             "rule": rule.get("title", rule["_path"]),
-            "path": rule["_path"],
+            "path": display_path(rule["_path"]),
             "techniques": techniques_in_rule(rule),
             "events_checked": len(records),
             "hits": len(alerts),
@@ -190,29 +190,39 @@ def alerts_markdown(results, max_events=5):
     return "\n".join(lines) + "\n"
 
 
+def display_path(path):
+    """A rule's path relative to the repo (e.g. detections/aws/x.yml), so reports are the same on every machine."""
+    try:
+        return Path(path).resolve().relative_to(REPO_ROOT).as_posix()
+    except ValueError:  # a rule outside the repo, e.g. in a test's temp folder
+        return Path(path).name
+
+
+def write_text_lf(path, text):
+    """Write a report with LF line endings, so Windows and Linux (CI) produce identical files."""
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+
+
 def write_reports(out_dir, results, coverage, caught, total_malicious):
     """Write results and coverage files into out_dir. Returns the results markdown."""
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     table = results_markdown(results, caught, total_malicious)
-    (out_dir / "results.md").write_text("# Replay results\n\n" + table, encoding="utf-8")
-    (out_dir / "alerts.md").write_text(alerts_markdown(results), encoding="utf-8")
-    (out_dir / "coverage.md").write_text(
-        "# ATT&CK coverage\n\n![coverage map](coverage.svg)\n\n" + coverage_markdown(coverage),
-        encoding="utf-8",
-    )
-    (out_dir / "coverage.svg").write_text(coverage_svg(coverage), encoding="utf-8")
+    write_text_lf(out_dir / "results.md", "# Replay results\n\n" + table)
+    write_text_lf(out_dir / "alerts.md", alerts_markdown(results))
+    write_text_lf(out_dir / "coverage.md",
+                  "# ATT&CK coverage\n\n![coverage map](coverage.svg)\n\n" + coverage_markdown(coverage))
+    write_text_lf(out_dir / "coverage.svg", coverage_svg(coverage))
     # JSON for machines: drop the internal fields that can't be serialized.
     serializable = [
         {key: (sorted(value) if key == "techniques" else value)
          for key, value in r.items() if key not in ("caught_ids", "open_alerts", "closed_alerts")}
         for r in results
     ]
-    (out_dir / "results.json").write_text(
-        json.dumps({"rules": serializable, "chain_caught": caught, "chain_total": total_malicious,
-                    "coverage": coverage}, indent=2),
-        encoding="utf-8",
-    )
+    write_text_lf(out_dir / "results.json",
+                  json.dumps({"rules": serializable, "chain_caught": caught,
+                              "chain_total": total_malicious, "coverage": coverage}, indent=2) + "\n")
     return table
 
 

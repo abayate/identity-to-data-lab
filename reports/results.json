@@ -2,7 +2,7 @@
   "rules": [
     {
       "rule": "AWS Burst of Access-Denied API Calls by One Identity",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\aws\\aws_access_denied_burst.yml",
+      "path": "detections/aws/aws_access_denied_burst.yml",
       "techniques": [
         "T1078.004",
         "T1580"
@@ -17,7 +17,7 @@
     },
     {
       "rule": "AWS Access Key Created for a Different IAM User",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\aws\\aws_access_key_created_for_other_user.yml",
+      "path": "detections/aws/aws_access_key_created_for_other_user.yml",
       "techniques": [
         "T1098.001"
       ],
@@ -31,7 +31,7 @@
     },
     {
       "rule": "AWS EBS Snapshot Shared With Another Account or Made Public",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\aws\\aws_ebs_snapshot_shared.yml",
+      "path": "detections/aws/aws_ebs_snapshot_shared.yml",
       "techniques": [
         "T1537"
       ],
@@ -45,7 +45,7 @@
     },
     {
       "rule": "AWS IAM Policy Version Set as Default With Wildcard Actions",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\aws\\aws_policy_version_grants_wildcard.yml",
+      "path": "detections/aws/aws_policy_version_grants_wildcard.yml",
       "techniques": [
         "T1078.004",
         "T1098.003"
@@ -60,7 +60,7 @@
     },
     {
       "rule": "AWS IAM Role Created Trusting Any Principal or a Whole Account",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\aws\\aws_role_trust_wildcard_or_account.yml",
+      "path": "detections/aws/aws_role_trust_wildcard_or_account.yml",
       "techniques": [
         "T1098.003"
       ],
@@ -74,7 +74,7 @@
     },
     {
       "rule": "AWS S3 Mass Object Download by One Identity",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\aws\\aws_s3_mass_getobject.yml",
+      "path": "detections/aws/aws_s3_mass_getobject.yml",
       "techniques": [
         "T1530"
       ],
@@ -88,7 +88,7 @@
     },
     {
       "rule": "Data Access Within One Hour of a Multi-IP Entra Session",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\data\\identity_to_data_access_after_multi_ip_session.yml",
+      "path": "detections/data/identity_to_data_access_after_multi_ip_session.yml",
       "techniques": [
         "T1078.004",
         "T1114.002",
@@ -104,7 +104,7 @@
     },
     {
       "rule": "M365 Mass File Access or Download by One User",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\data\\m365_mass_file_access.yml",
+      "path": "detections/data/m365_mass_file_access.yml",
       "techniques": [
         "T1530",
         "T1567"
@@ -119,7 +119,7 @@
     },
     {
       "rule": "M365 File Download With Rclone User Agent",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\data\\m365_rclone_download.yml",
+      "path": "detections/data/m365_rclone_download.yml",
       "techniques": [
         "T1530",
         "T1567"
@@ -134,7 +134,7 @@
     },
     {
       "rule": "M365 Search for Credential or Payroll Terms",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\data\\m365_sensitive_term_search.yml",
+      "path": "detections/data/m365_sensitive_term_search.yml",
       "techniques": [
         "T1213.002"
       ],
@@ -148,7 +148,7 @@
     },
     {
       "rule": "Entra ID Sign-In Using Device Code Flow",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\entra\\entra_device_code_signin.yml",
+      "path": "detections/entra/entra_device_code_signin.yml",
       "techniques": [
         "T1528"
       ],
@@ -162,7 +162,7 @@
     },
     {
       "rule": "Entra ID User Consent Granted to an Application",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\entra\\entra_oauth_consent_granted.yml",
+      "path": "detections/entra/entra_oauth_consent_granted.yml",
       "techniques": [
         "T1528"
       ],
@@ -176,7 +176,7 @@
     },
     {
       "rule": "Entra ID User Session Active From Multiple IPs Within One Hour",
-      "path": "C:\\Users\\antho\\Desktop\\cyberproject\\detections\\entra\\entra_user_signin_multiple_ips.yml",
+      "path": "detections/entra/entra_user_signin_multiple_ips.yml",
       "techniques": [
         "T1078.004",
         "T1550.004"

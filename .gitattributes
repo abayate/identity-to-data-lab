@@ -3,3 +3,5 @@
 data/sample-logs/** text eol=lf
 # Raw public datasets are stored exactly as downloaded.
 data/raw/** -text
+# Generated reports are compared byte-for-byte in CI ("reports are up to date").
+reports/** text eol=lf

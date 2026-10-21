@@ -8,9 +8,9 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
 
@@ -23,3 +23,8 @@ jobs:
       - name: Replay sample logs through all rules
         # Prints the per-rule TP/FP table and adds it to this run's summary page.
         run: python harness/replay.py
+
+      - name: Check committed reports are up to date
+        # replay.py just rewrote reports/. If they differ from what's committed, someone changed
+        # rules or data without re-running the replay, so the README numbers would be stale.
+        run: git diff --exit-code -- reports/
