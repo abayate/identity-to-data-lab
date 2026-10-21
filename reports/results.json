@@ -1,0 +1,63 @@
+{
+  "rules": [],
+  "chain_caught": 0,
+  "chain_total": 0,
+  "coverage": [
+    {
+      "id": "T1566",
+      "name": "Phishing",
+      "branch": "Identity",
+      "status": "gap",
+      "rules": []
+    },
+    {
+      "id": "T1528",
+      "name": "Steal Application Access Token",
+      "branch": "Identity",
+      "status": "gap",
+      "rules": []
+    },
+    {
+      "id": "T1539",
+      "name": "Steal Web Session Cookie",
+      "branch": "Identity",
+      "status": "gap",
+      "rules": []
+    },
+    {
+      "id": "T1078.004",
+      "name": "Valid Accounts: Cloud Accounts",
+      "branch": "Identity",
+      "status": "gap",
+      "rules": []
+    },
+    {
+      "id": "T1530",
+      "name": "Data from Cloud Storage",
+      "branch": "Data",
+      "status": "gap",
+      "rules": []
+    },
+    {
+      "id": "T1552.001",
+      "name": "Unsecured Credentials: Credentials In Files",
+      "branch": "AWS",
+      "status": "gap",
+      "rules": []
+    },
+    {
+      "id": "T1098.003",
+      "name": "Account Manipulation: Additional Cloud Roles",
+      "branch": "AWS",
+      "status": "gap",
+      "rules": []
+    },
+    {
+      "id": "T1537",
+      "name": "Transfer Data to Cloud Account",
+      "branch": "AWS",
+      "status": "gap",
+      "rules": []
+    }
+  ]
+}

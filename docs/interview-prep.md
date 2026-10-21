@@ -131,3 +131,155 @@ convert line endings on checkout. It's harmless, and CI runs on Linux.
    What would you gain?
 4. What does `pythonpath = ["."]` do, and what error would you see without it?
 5. Why commit after each phase instead of once at the end?
+
+---
+
+## Phase 1 (part 1) — Log schema and sample-log tests
+
+### The 30-second version
+
+> "Before generating any logs I pinned down what one sign-in record looks like. The
+> field names copy Microsoft's real `SigninLogs` table, so rules I write against the
+> synthetic data work on a real tenant later. Every record also carries an answer
+> key, `lab_label`, that says benign or malicious, which is how the harness can score
+> true and false positives. A pytest file checks that every committed log file
+> parses and matches that schema."
+
+### Why copy the real Microsoft field names?
+
+The whole point of the lab is that the rules transfer to production. If my synthetic
+logs used made-up names like `user` and `ip`, every rule would need rewriting at
+go-live. Using `UserPrincipalName`, `IPAddress`, `AuthenticationRequirement` and so
+on means the KQL equivalents can run against Sentinel unchanged.
+
+### What are the `lab_` fields and why can't rules use them?
+
+`lab_label` and `lab_scenario` are the ground truth. Real logs never come with a
+"this was an attacker" column. That's exactly why detection is hard. If a rule
+matched on `lab_label`, it would score 100% and prove nothing. The `lab_` prefix
+makes the cheat obvious in code review.
+
+### Why JSON Lines (`.jsonl`) instead of one big JSON array?
+
+One event per line is how most log exports and SIEM ingestion pipelines work.
+You can read it line by line without loading the whole file, and a broken line
+points to an exact line number in the test failure.
+
+### Why does the test file test its own checker?
+
+`check_record` is the code that decides whether a log is valid. If it had a bug
+and accepted everything, every sample-log test would pass and mean nothing. The
+`test_checker_*` tests feed it known-bad records (missing field, bad label, bad
+timestamp) and confirm it complains. That's testing the test.
+
+### Why are two tests "skipped"?
+
+No sample logs are committed yet. `skipif` marks those tests as skipped instead of
+failing, so CI stays green while the generator gets built. Once an
+`entra_signins*.jsonl` file exists, they run automatically.
+
+### Practice questions
+
+1. What would break at go-live if the synthetic logs used invented field names?
+2. Why is `AutonomousSystemNumber` useful for spotting a stolen-token replay?
+3. What does `IncomingTokenType` tell you that a normal login field doesn't?
+4. Why does the suite check that both `benign` and `malicious` labels appear?
+
+---
+
+## Phase 2 (engine) — The minimal Sigma matcher (`harness/evaluate.py`)
+
+### The 30-second version
+
+> "Instead of pulling in a full Sigma backend, I wrote a small matcher, about 200
+> lines, that reads a rule's `detection` block and checks it directly against each
+> log record. It supports selections, the common field modifiers, and the condition
+> language: and/or/not, parentheses, and `1 of`/`all of`. Then `score_rule` compares
+> the rule's hits against the answer key to give true positives, false positives
+> and a false-positive rate."
+
+### How does a Sigma rule get evaluated, step by step?
+
+1. **Selections first.** Each named block under `detection:` (like `selection` or
+   `filter_known_vpn`) is checked against the record and becomes True or False.
+   - Fields inside one map are **AND**ed.
+   - A list of values for one field is **OR**ed.
+   - A list of maps is **OR**ed.
+2. **Then the condition.** The `condition:` line is evaluated using those
+   True/False values, e.g. `selection and not filter_known_vpn`.
+
+### How does the condition parser work?
+
+It's a recursive-descent parser, one small function per precedence level:
+`parse_or` calls `parse_and`, which calls `parse_not`, which calls `parse_atom`.
+Because `and` sits deeper than `or`, `a or b and c` is read as `a or (b and c)`,
+the same as in most programming languages. Parentheses go back to the top
+(`parse_or`), which is how they override precedence.
+
+### Why write your own matcher instead of using pySigma?
+
+- pySigma's job is converting rules into SIEM queries (KQL, SPL). It doesn't
+  evaluate rules against JSON in Python. I'd still need a SIEM to run them.
+- Writing it myself means I can explain exactly what "the rule fired" means.
+- The trade-off: it only supports the subset of Sigma my rules use. Correlation
+  rules and aggregations aren't supported, and the docstring says so.
+
+### Why are string matches case-insensitive?
+
+The Sigma spec says so, and real logs are inconsistent (`Alice@Contoso.com` vs
+`alice@contoso.com`). A case-sensitive match is an easy way for an attacker to
+slip past a rule. Regexes are the exception: they're used as written, so the rule
+author controls case.
+
+### Why doesn't `score_rule` count false negatives?
+
+Each rule targets one step of the attack. A rule built for one step *should* stay
+quiet on events from a different step, so counting those as misses would be
+unfair. Whole-chain coverage, meaning did *some* rule catch each malicious event,
+gets measured across all rules together in the replay harness.
+
+### Practice questions
+
+1. Walk me through how `selection and not filter` is evaluated for one record.
+2. What does `1 of selection*` mean? When would you use it?
+3. What does `null` mean as a value in a Sigma selection?
+4. A rule has a 0% FP rate on your synthetic data. Why might it still be noisy in production?
+5. Why does `parse_or` evaluate the right-hand side even when the left side is already True?
+
+---
+
+## Phase 5 (tooling) — Triage, coverage map, and replay runner
+
+### The 30-second version
+
+> "`replay.py` loads every log and every rule, runs each rule only against its own
+> log type, and scores it. `enrich.py` then triages the hits: anything matching a
+> documented known-benign pattern is auto-closed, and everything else gets context,
+> like whether this IP or network is new for this user. `coverage.py` turns the rules'
+> ATT&CK tags into a map that marks each technique tested, untested, or a gap. CI runs
+> all of it on every push and posts the tables to the Actions summary page."
+
+### Why does every known-benign entry need a reason?
+
+An auto-close is a deliberate blind spot. If nobody can say why it exists, nobody
+can tell when it has gone stale. The loader refuses entries without a `reason`, which
+turns a team norm into an enforced check.
+
+### What's the difference between "FP rate" and "FP rate after triage"?
+
+FP rate is how often the raw rule fires on benign traffic. After triage, it's the FP
+rate an analyst actually sees once known-benign hits are auto-closed. Reporting both
+shows the rule's own precision *and* the value of the automation.
+
+### Why "tested" vs "untested" in the coverage map?
+
+A rule tagged with a technique proves nothing until it catches real attack telemetry.
+Only "tested" techniques count as covered. Plenty of coverage maps out there just
+count rules.
+
+### Practice questions
+
+1. Why does replay match rules to log files by `logsource` instead of running every rule on every log?
+2. What's the risk of an over-broad known-benign entry? How would you catch one?
+3. How does `build_context` decide an IP is "new for the user"? What's its weakness on a small dataset?
+4. How does the CI summary page get the table? (Hint: `GITHUB_STEP_SUMMARY`.)

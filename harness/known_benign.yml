@@ -1,0 +1,19 @@
+# Known-benign patterns: hits that match an entry here are auto-closed by harness/enrich.py.
+#
+# Every entry MUST have a written reason. An auto-close without a reason is how real
+# attacks get silently dismissed. Review this list like code: each entry is a blind spot.
+#
+# Format:
+#   - name: short id
+#     reason: why this is expected and safe
+#     rules: [optional list of rule titles this entry applies to; omit = all rules]
+#     match:              # same syntax as a Sigma selection
+#       FieldName: value
+#
+# Entries are added alongside the rules they tune (Phase 2 onward). Example shape:
+#
+# - name: corporate-vpn-egress
+#   reason: All staff traffic exits through the corporate VPN range, so a "new IP" there is not new.
+#   match:
+#     IPAddress|startswith: '198.51.100.'
+[]

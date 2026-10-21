@@ -19,3 +19,7 @@ jobs:
 
       - name: Run tests
         run: pytest -v
+
+      - name: Replay sample logs through all rules
+        # Prints the per-rule TP/FP table and adds it to this run's summary page.
+        run: python harness/replay.py
