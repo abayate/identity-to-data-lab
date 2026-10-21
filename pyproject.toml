@@ -1,0 +1,4 @@
+[tool.pytest.ini_options]
+# Run tests from the repo root so `import harness` works without installing anything.
+pythonpath = ["."]
+testpaths = ["tests"]
